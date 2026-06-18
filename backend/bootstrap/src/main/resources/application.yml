@@ -1,0 +1,20 @@
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+
+aiq:
+  limit:
+    fake:
+      enabled: true
+    codex:
+      timeout: 30s
+      max-output-bytes: 100000
+  executor:
+    fake:
+      enabled: true
+    codex:
+      enabled: false
