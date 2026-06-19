@@ -4,6 +4,7 @@ import type { AiTool, DashboardSummary, Prompt, Queue, RunQueueResult } from '..
 interface DashboardPageProps {
   summary: DashboardSummary | null;
   queues: Queue[];
+  selectedQueue: Queue | undefined;
   prompts: Prompt[];
   tools: AiTool[];
   lastRun: RunQueueResult | null;
@@ -13,7 +14,7 @@ interface DashboardPageProps {
 }
 
 export function DashboardPage(props: DashboardPageProps) {
-  const activeQueue = props.queues.find((queue) => queue.status === 'RUNNING') ?? props.queues[0];
+  const activeQueue = props.selectedQueue ?? props.queues.find((queue) => queue.status === 'RUNNING') ?? props.queues[0];
   const recentPrompts = props.prompts.slice(0, 5);
 
   return (

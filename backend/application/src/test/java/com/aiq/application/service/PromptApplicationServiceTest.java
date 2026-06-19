@@ -10,14 +10,18 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.aiq.application.port.out.AiToolRepository;
+import com.aiq.application.port.out.PromptExecutionRepository;
 import com.aiq.application.port.out.PromptQueueRepository;
 import com.aiq.application.port.out.PromptRepository;
 import com.aiq.application.prompt.AddPromptCommand;
 import com.aiq.application.prompt.dto.AddPromptResult;
+import com.aiq.application.prompt.dto.PromptDetails;
 import com.aiq.application.prompt.dto.PromptSummary;
 import com.aiq.domain.aitool.AiTool;
 import com.aiq.domain.aitool.AiToolStatus;
 import com.aiq.domain.aitool.AiToolType;
+import com.aiq.domain.execution.ExecutionResult;
+import com.aiq.domain.execution.PromptExecution;
 import com.aiq.domain.queue.Prompt;
 import com.aiq.domain.queue.PromptQueue;
 import com.aiq.domain.queue.PromptStatus;
@@ -35,10 +39,12 @@ class PromptApplicationServiceTest {
     private final PromptRepository promptRepository = mock(PromptRepository.class);
     private final PromptQueueRepository promptQueueRepository = mock(PromptQueueRepository.class);
     private final AiToolRepository aiToolRepository = mock(AiToolRepository.class);
+    private final PromptExecutionRepository promptExecutionRepository = mock(PromptExecutionRepository.class);
     private final PromptApplicationService service = new PromptApplicationService(
         promptRepository,
         promptQueueRepository,
-        aiToolRepository
+        aiToolRepository,
+        promptExecutionRepository
     );
 
     @Test
@@ -141,6 +147,29 @@ class PromptApplicationServiceTest {
         assertThat(prompts)
             .extracting(PromptSummary::id)
             .containsExactly(highPriority.getId(), lowPriority.getId(), samePriorityEarlier.getId());
+    }
+
+    @Test
+    void shouldReturnLastExecutionResultWithPromptDetails() {
+        PromptQueue queue = queue();
+        Prompt prompt = prompt(queue, "Ask Codex", 0, 0);
+        PromptExecution execution = PromptExecution.create(prompt.getId(), aiToolId, "codex exec -");
+        execution.start();
+        execution.complete(new ExecutionResult(
+            0,
+            "Codex response text",
+            "",
+            "{\"msg\":\"Codex response text\"}",
+            null
+        ));
+        givenPrompt(prompt);
+        when(promptExecutionRepository.findLatestByPromptId(prompt.getId())).thenReturn(Optional.of(execution));
+
+        PromptDetails details = service.getPrompt(prompt.getId());
+
+        assertThat(details.lastExecution()).isPresent();
+        assertThat(details.lastExecution().orElseThrow().responseText()).contains("Codex response text");
+        assertThat(details.lastExecution().orElseThrow().rawOutput()).contains("{\"msg\":\"Codex response text\"}");
     }
 
     @Test

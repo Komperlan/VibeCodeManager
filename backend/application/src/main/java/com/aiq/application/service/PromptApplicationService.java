@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aiq.application.port.out.AiToolRepository;
+import com.aiq.application.port.out.PromptExecutionRepository;
 import com.aiq.application.port.out.PromptQueueRepository;
 import com.aiq.application.port.out.PromptRepository;
 import com.aiq.application.prompt.AddPromptCommand;
@@ -28,6 +29,7 @@ public class PromptApplicationService {
     private final PromptRepository promptRepository;
     private final PromptQueueRepository promptQueueRepository;
     private final AiToolRepository aiToolRepository;
+    private final PromptExecutionRepository promptExecutionRepository;
     private final PromptOrderingService promptOrderingService = new PromptOrderingService();
 
     public AddPromptResult addPrompt(AddPromptCommand command) {
@@ -74,7 +76,8 @@ public class PromptApplicationService {
 
     @Transactional(readOnly = true)
     public PromptDetails getPrompt(UUID promptId) {
-        return PromptMapper.toDetails(findPromptRequired(promptId));
+        Prompt prompt = findPromptRequired(promptId);
+        return PromptMapper.toDetails(prompt, promptExecutionRepository.findLatestByPromptId(prompt.getId()));
     }
 
     @Transactional(readOnly = true)

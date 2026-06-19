@@ -35,7 +35,7 @@ class CodexCliPromptExecutorTest {
         String command = executor.buildCommand(request());
 
         assertThat(command)
-            .isEqualTo("codex exec --json --color never --skip-git-repo-check -")
+            .isEqualTo("codex exec --json --color never --sandbox workspace-write --skip-git-repo-check -")
             .doesNotContain("Implement executor");
     }
 
@@ -61,6 +61,8 @@ class CodexCliPromptExecutorTest {
             "--json",
             "--color",
             "never",
+            "--sandbox",
+            "workspace-write",
             "--skip-git-repo-check",
             "-"
         );
@@ -95,6 +97,8 @@ class CodexCliPromptExecutorTest {
             "--json",
             "--color",
             "never",
+            "--sandbox",
+            "workspace-write",
             "--skip-git-repo-check",
             "-"
         ));

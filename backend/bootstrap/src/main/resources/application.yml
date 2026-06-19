@@ -34,6 +34,10 @@ aiq:
     codex:
       timeout: 30s
       max-output-bytes: 100000
+  queue:
+    limit-resume:
+      enabled: true
+      poll-interval: 60s
   executor:
     fake:
       enabled: true

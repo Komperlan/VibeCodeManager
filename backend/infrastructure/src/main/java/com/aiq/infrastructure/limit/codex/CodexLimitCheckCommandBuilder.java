@@ -1,6 +1,7 @@
 package com.aiq.infrastructure.limit.codex;
 
 import com.aiq.application.limit.AiLimitCheckRequest;
+import com.aiq.application.path.LocalPathNormalizer;
 import com.aiq.infrastructure.executor.codex.CodexCliProperties;
 import com.aiq.infrastructure.executor.request.ProcessCommand;
 import java.nio.file.Path;
@@ -37,17 +38,13 @@ public class CodexLimitCheckCommandBuilder {
 
     private List<String> arguments() {
         List<String> arguments = new ArrayList<>();
-        arguments.add(codexCliProperties.getExecutablePath().toString());
+        arguments.add(LocalPathNormalizer.executablePath(codexCliProperties.getExecutablePath()));
         arguments.addAll(limitCheckerProperties.getArguments());
 
         return arguments;
     }
 
     private Path workingDirectory(AiLimitCheckRequest request) {
-        if (request.workingDirectory() == null || request.workingDirectory().isBlank()) {
-            return Path.of("").toAbsolutePath().normalize();
-        }
-
-        return Path.of(request.workingDirectory()).toAbsolutePath().normalize();
+        return LocalPathNormalizer.toDirectoryPath(request.workingDirectory());
     }
 }

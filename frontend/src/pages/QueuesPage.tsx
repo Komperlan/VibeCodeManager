@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import { Button, EmptyState, Field, inputClassName, PageHeader, Panel, PanelHeader, ProgressBar, StatusBadge } from '../components/ui';
 import { cn } from '../lib/cn';
-import type { AiTool, AutoRunMode, CreatePromptInput, CreateQueueInput, Project, Prompt, Queue } from '../types';
+import type { AiTool, AutoRunMode, CreatePromptInput, CreateQueueInput, Project, Prompt, PromptDetails, Queue } from '../types';
 
 interface QueuesPageProps {
   projects: Project[];
@@ -9,7 +9,11 @@ interface QueuesPageProps {
   queues: Queue[];
   prompts: Prompt[];
   selectedProjectId: string | null;
+  selectedQueueId: string | null;
+  selectedPromptDetails: PromptDetails | null;
   onSelectProject: (projectId: string) => void;
+  onSelectQueue: (queueId: string) => void;
+  onSelectPrompt: (promptId: string) => void;
   loading: boolean;
   onCreateQueue: (input: CreateQueueInput) => void;
   onCreatePrompt: (input: CreatePromptInput) => void;
@@ -33,7 +37,7 @@ export function QueuesPage(props: QueuesPageProps) {
   const availableTools = props.tools.filter((tool) => tool.status === 'ENABLED');
   const promptQueueOptions = visibleQueues.length > 0 ? visibleQueues : props.queues;
   const [promptForm, setPromptForm] = useState<CreatePromptInput>({
-    queueId: props.queues[0]?.id ?? '',
+    queueId: props.selectedQueueId ?? props.queues[0]?.id ?? '',
     targetAiToolId: availableTools[0]?.id ?? '',
     title: '',
     content: '',
@@ -54,9 +58,12 @@ export function QueuesPage(props: QueuesPageProps) {
   }, [form.projectId, props.projects, props.selectedProjectId]);
 
   useEffect(() => {
+    const preferredQueueId = props.selectedQueueId && promptQueueOptions.some((queue) => queue.id === props.selectedQueueId)
+      ? props.selectedQueueId
+      : promptQueueOptions[0]?.id ?? '';
     const nextQueueId = promptQueueOptions.some((queue) => queue.id === promptForm.queueId)
       ? promptForm.queueId
-      : promptQueueOptions[0]?.id ?? '';
+      : preferredQueueId;
     const nextToolId = availableTools.some((tool) => tool.id === promptForm.targetAiToolId)
       ? promptForm.targetAiToolId
       : availableTools[0]?.id ?? '';
@@ -70,7 +77,7 @@ export function QueuesPage(props: QueuesPageProps) {
       queueId: nextQueueId,
       targetAiToolId: nextToolId,
     }));
-  }, [availableTools, promptForm.queueId, promptForm.targetAiToolId, promptQueueOptions]);
+  }, [availableTools, promptForm.queueId, promptForm.targetAiToolId, promptQueueOptions, props.selectedQueueId]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -119,6 +126,15 @@ export function QueuesPage(props: QueuesPageProps) {
     setShowPromptForm(false);
   }
 
+  function togglePromptForm() {
+    setPromptForm((current) => ({
+      ...current,
+      queueId: props.selectedQueueId ?? promptQueueOptions[0]?.id ?? current.queueId,
+      targetAiToolId: current.targetAiToolId || (availableTools[0]?.id ?? ''),
+    }));
+    setShowPromptForm((visible) => !visible);
+  }
+
   return (
     <>
       <PageHeader
@@ -129,7 +145,7 @@ export function QueuesPage(props: QueuesPageProps) {
           <>
             <Button
               disabled={props.loading || props.queues.length === 0 || availableTools.length === 0}
-              onClick={() => setShowPromptForm((visible) => !visible)}
+              onClick={togglePromptForm}
               variant="secondary"
             >
               {showPromptForm ? 'Close Prompt' : 'Add Prompt'}
@@ -351,20 +367,39 @@ export function QueuesPage(props: QueuesPageProps) {
               const queuePrompts = props.prompts.filter((prompt) => prompt.queueId === queue.id);
               const total = queue.queuedPrompts + queue.completedPrompts + queue.failedPrompts;
               const progress = total === 0 ? 0 : (queue.completedPrompts / total) * 100;
+              const selected = props.selectedQueueId === queue.id;
 
               return (
-                <article className="rounded-3xl border border-white/10 bg-white/[0.04] p-5" key={queue.id}>
+                <article
+                  className={cn(
+                    'cursor-pointer rounded-3xl border p-5 transition hover:border-violet-300/35 hover:bg-white/[0.07]',
+                    selected ? 'border-violet-300/50 bg-violet-500/[0.13] shadow-xl shadow-violet-950/20' : 'border-white/10 bg-white/[0.04]',
+                  )}
+                  key={queue.id}
+                  onClick={() => props.onSelectQueue(queue.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      props.onSelectQueue(queue.id);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                      <div className="text-xl font-black text-white">{queue.name}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-xl font-black text-white">{queue.name}</div>
+                        {selected && <span className="rounded-full border border-violet-300/30 bg-violet-400/15 px-3 py-1 text-xs font-black uppercase tracking-wide text-violet-100">Selected</span>}
+                      </div>
                       <div className="mt-1 text-sm text-slate-500">
                         {queue.autoRunMode} / max {queue.maxPromptsPerRun} / cooldown {queue.cooldownSeconds}s
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <StatusBadge status={queue.status} />
-                      <Button disabled={props.loading || queue.status === 'WAITING_LIMIT'} onClick={() => props.onRunQueue(queue.id)} variant="secondary">
-                        Run
+                      <Button disabled={props.loading} onClick={() => props.onRunQueue(queue.id)} variant="secondary">
+                        {queue.status === 'WAITING_LIMIT' ? 'Retry' : 'Run'}
                       </Button>
                     </div>
                   </div>
@@ -379,13 +414,24 @@ export function QueuesPage(props: QueuesPageProps) {
 
                   <div className="mt-5 grid gap-3">
                     {queuePrompts.slice(0, 3).map((prompt) => (
-                      <div className="flex items-center justify-between gap-3 rounded-2xl bg-black/20 px-4 py-3" key={prompt.id}>
+                      <button
+                        className={cn(
+                          'flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition hover:bg-white/[0.08]',
+                          props.selectedPromptDetails?.id === prompt.id ? 'bg-violet-400/[0.16]' : 'bg-black/20',
+                        )}
+                        key={prompt.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          props.onSelectPrompt(prompt.id);
+                        }}
+                        type="button"
+                      >
                         <div>
                           <div className="font-bold text-slate-200">{prompt.title}</div>
                           <div className="mt-1 text-xs text-slate-500">#{prompt.position} / priority {prompt.priority}</div>
                         </div>
                         <StatusBadge status={prompt.status} />
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </article>
@@ -394,6 +440,57 @@ export function QueuesPage(props: QueuesPageProps) {
           </div>
         </Panel>
       </section>
+
+      {props.selectedPromptDetails && (
+        <Panel className="mt-5">
+          <PanelHeader
+            eyebrow="Prompt result"
+            title={props.selectedPromptDetails.title}
+            description="Last saved execution response for this prompt. The response is loaded from prompt execution history."
+            aside={<StatusBadge status={props.selectedPromptDetails.status} />}
+          />
+
+          <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
+              <div className="eyebrow">Prompt Content</div>
+              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap text-sm leading-6 text-slate-300">
+                {props.selectedPromptDetails.content}
+              </pre>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="eyebrow">Codex Response</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {props.selectedPromptDetails.lastExecution
+                      ? `exit ${props.selectedPromptDetails.lastExecution.exitCode ?? 'n/a'} / ${props.selectedPromptDetails.lastExecution.durationMillis ?? 0} ms`
+                      : 'No execution saved yet'}
+                  </div>
+                </div>
+                {props.selectedPromptDetails.lastExecution && <StatusBadge status={props.selectedPromptDetails.lastExecution.status} />}
+              </div>
+
+              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap text-sm leading-6 text-slate-200">
+                {executionText(props.selectedPromptDetails)}
+              </pre>
+            </div>
+          </div>
+        </Panel>
+      )}
     </>
   );
+}
+
+function executionText(prompt: PromptDetails) {
+  const execution = prompt.lastExecution;
+  if (!execution) {
+    return 'No Codex response has been saved for this prompt yet.';
+  }
+
+  return execution.responseText
+    ?? execution.errorMessage
+    ?? execution.stderr
+    ?? execution.rawOutput
+    ?? 'Execution finished without text output.';
 }

@@ -16,6 +16,7 @@ import com.aiq.application.port.out.AiLimitChecker;
 import com.aiq.application.port.out.AiToolRepository;
 import com.aiq.application.port.out.PromptExecutionRepository;
 import com.aiq.application.port.out.PromptExecutor;
+import com.aiq.application.port.out.ProjectRepository;
 import com.aiq.application.port.out.PromptQueueRepository;
 import com.aiq.application.port.out.PromptRepository;
 import com.aiq.application.runner.PromptExecutionRequest;
@@ -28,6 +29,7 @@ import com.aiq.domain.aitool.AiToolType;
 import com.aiq.domain.execution.ExecutionResult;
 import com.aiq.domain.execution.ExecutionStatus;
 import com.aiq.domain.execution.PromptExecution;
+import com.aiq.domain.project.Project;
 import com.aiq.domain.queue.AutoRunMode;
 import com.aiq.domain.queue.Prompt;
 import com.aiq.domain.queue.PromptQueue;
@@ -45,8 +47,10 @@ import org.mockito.ArgumentCaptor;
 class QueueRunnerApplicationServiceTest {
 
     private final UUID aiToolId = UUID.randomUUID();
+    private static final String PROJECT_ROOT_DIRECTORY = "/workspace/project-root";
     private final PromptQueueRepository promptQueueRepository = mock(PromptQueueRepository.class);
     private final PromptRepository promptRepository = mock(PromptRepository.class);
+    private final ProjectRepository projectRepository = mock(ProjectRepository.class);
     private final AiToolRepository aiToolRepository = mock(AiToolRepository.class);
     private final PromptExecutionRepository promptExecutionRepository = mock(PromptExecutionRepository.class);
     private final AiLimitChecker aiLimitChecker = mock(AiLimitChecker.class);
@@ -55,6 +59,7 @@ class QueueRunnerApplicationServiceTest {
     private final QueueRunnerApplicationService service = new QueueRunnerApplicationService(
         promptQueueRepository,
         promptRepository,
+        projectRepository,
         aiToolRepository,
         promptExecutionRepository,
         aiLimitChecker,
@@ -114,6 +119,65 @@ class QueueRunnerApplicationServiceTest {
 
         verify(promptRepository).save(highPriority);
         verify(promptQueueRepository).save(queue);
+    }
+
+    @Test
+    void shouldUseProjectRootDirectoryWhenPromptHasNoWorkingDirectoryOverride() {
+        PromptQueue queue = queue();
+        Prompt prompt = prompt(queue, "Use project root", 0, 0);
+
+        givenQueue(queue);
+        givenPrompts(queue, prompt);
+        givenSuccessfulExecutor();
+
+        service.runNextPrompt(queue.getId());
+
+        PromptExecutionRequest executionRequest = executedRequest();
+        assertThat(executionRequest.workingDirectoryOverride()).isEqualTo(PROJECT_ROOT_DIRECTORY);
+
+        AiLimitCheckRequest limitRequest = limitCheckRequest();
+        assertThat(limitRequest.workingDirectory()).contains(PROJECT_ROOT_DIRECTORY);
+    }
+
+    @Test
+    void shouldExpandHomeDirectoryInProjectRootDirectory() {
+        PromptQueue queue = queue();
+        Prompt prompt = prompt(queue, "Use home shortcut", 0, 0);
+        String expectedWorkingDirectory = java.nio.file.Path.of(
+            System.getProperty("user.home"),
+            "testDirForVCManager"
+        ).toString();
+
+        givenQueue(queue);
+        givenPrompts(queue, prompt);
+        givenProject(queue, "~/testDirForVCManager");
+        givenSuccessfulExecutor();
+
+        service.runNextPrompt(queue.getId());
+
+        PromptExecutionRequest executionRequest = executedRequest();
+        assertThat(executionRequest.workingDirectoryOverride()).isEqualTo(expectedWorkingDirectory);
+
+        AiLimitCheckRequest limitRequest = limitCheckRequest();
+        assertThat(limitRequest.workingDirectory()).isEqualTo(expectedWorkingDirectory);
+    }
+
+    @Test
+    void shouldPreferPromptWorkingDirectoryOverrideOverProjectRoot() {
+        PromptQueue queue = queue();
+        Prompt prompt = prompt(queue, "Use override", 0, 0, "/tmp/prompt-workdir");
+
+        givenQueue(queue);
+        givenPrompts(queue, prompt);
+        givenSuccessfulExecutor();
+
+        service.runNextPrompt(queue.getId());
+
+        PromptExecutionRequest executionRequest = executedRequest();
+        assertThat(executionRequest.workingDirectoryOverride()).isEqualTo("/tmp/prompt-workdir");
+
+        AiLimitCheckRequest limitRequest = limitCheckRequest();
+        assertThat(limitRequest.workingDirectory()).contains("/tmp/prompt-workdir");
     }
 
     @Test
@@ -263,13 +327,13 @@ class QueueRunnerApplicationServiceTest {
     @Test
     void shouldRejectMissingQueue() {
         UUID queueId = UUID.randomUUID();
-        when(promptQueueRepository.findById(queueId)).thenReturn(Optional.empty());
+        when(promptQueueRepository.findByIdForUpdate(queueId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.runNextPrompt(queueId))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessage("Prompt queue not found: " + queueId);
 
-        verify(promptQueueRepository).findById(queueId);
+        verify(promptQueueRepository).findByIdForUpdate(queueId);
         verifyNoInteractions(promptRepository, promptExecutionRepository, promptExecutor);
     }
 
@@ -433,7 +497,7 @@ class QueueRunnerApplicationServiceTest {
     }
 
     @Test
-    void shouldWaitForLimitWhenLimitCheckerFails() {
+    void shouldStopQueueWhenLimitCheckerFails() {
         PromptQueue queue = queue();
         Prompt prompt = prompt(queue, "Wait on checker error", 0, 0);
 
@@ -445,10 +509,11 @@ class QueueRunnerApplicationServiceTest {
 
         assertThat(result.executed()).isFalse();
         assertThat(result.promptId()).isEqualTo(prompt.getId());
-        assertThat(result.reason()).isEqualTo("Codex limit probe failed");
-        assertThat(queue.getStatus()).isEqualTo(QueueStatus.WAITING_LIMIT);
+        assertThat(result.reason()).isEqualTo("AI limit check failed: Codex limit probe failed");
+        assertThat(queue.getStatus()).isEqualTo(QueueStatus.STOPPED);
         assertThat(prompt.getStatus()).isEqualTo(PromptStatus.QUEUED);
 
+        verify(promptQueueRepository).save(queue);
         verifyNoInteractions(promptExecutionRepository, promptExecutor);
     }
 
@@ -470,6 +535,36 @@ class QueueRunnerApplicationServiceTest {
         assertThat(prompt.getStatus()).isEqualTo(PromptStatus.QUEUED);
 
         verifyNoInteractions(promptExecutionRepository, promptExecutor);
+    }
+
+    @Test
+    void shouldResumeQueueThatIsStillWaitingForLimit() {
+        PromptQueue queue = queue();
+        queue.markWaitingLimit();
+        Prompt prompt = prompt(queue, "Resume after limit", 0, 0);
+
+        givenQueue(queue);
+        givenPrompts(queue, prompt);
+        givenSuccessfulExecutor();
+
+        RunQueueResult result = service.resumeWaitingLimitQueue(queue.getId());
+
+        assertThat(result.executedPrompts()).isEqualTo(1);
+        assertThat(prompt.getStatus()).isEqualTo(PromptStatus.COMPLETED);
+        assertThat(queue.getStatus()).isEqualTo(QueueStatus.COMPLETED);
+    }
+
+    @Test
+    void shouldNotAutomaticallyResumeQueueWhoseStatusHasChanged() {
+        PromptQueue queue = queue();
+        givenQueue(queue);
+
+        RunQueueResult result = service.resumeWaitingLimitQueue(queue.getId());
+
+        assertThat(result.executedPrompts()).isZero();
+        assertThat(result.reason()).isEqualTo("Queue is no longer waiting for limit");
+        assertThat(queue.getStatus()).isEqualTo(QueueStatus.CREATED);
+        verifyNoInteractions(promptRepository, promptExecutionRepository, promptExecutor);
     }
 
     @Test
@@ -498,6 +593,58 @@ class QueueRunnerApplicationServiceTest {
         verify(promptExecutor, times(1)).execute(any(PromptExecutionRequest.class));
     }
 
+    @Test
+    void shouldReturnPromptToQueueWhenExecutorReportsLimitReached() {
+        PromptQueue queue = queue();
+        Prompt prompt = prompt(queue, "Runtime limit", 0, 0);
+        ExecutionResult executionResult = new ExecutionResult(
+            1,
+            "",
+            "Codex usage limit reached",
+            "Codex usage limit reached",
+            "Codex usage limit reached"
+        );
+
+        givenQueue(queue);
+        givenPrompts(queue, prompt);
+        givenExecutorResult(executionResult);
+        when(aiLimitChecker.detectLimit(any(AiLimitCheckRequest.class), any(ExecutionResult.class)))
+            .thenReturn(Optional.of(AiLimitCheckResult.limitReached("Codex usage limit reached", null)));
+
+        RunNextPromptResult result = service.runNextPrompt(queue.getId());
+
+        assertThat(result.executed()).isFalse();
+        assertThat(result.reason()).isEqualTo("Codex usage limit reached");
+        assertThat(queue.getStatus()).isEqualTo(QueueStatus.WAITING_LIMIT);
+        assertThat(prompt.getStatus()).isEqualTo(PromptStatus.QUEUED);
+        assertThat(prompt.getAttemptCount()).isZero();
+        assertThat(savedExecution().getStatus()).isEqualTo(ExecutionStatus.FAILED);
+        verify(promptRepository).save(prompt);
+        verify(promptQueueRepository, times(2)).save(queue);
+    }
+
+    @Test
+    void shouldNotInspectSuccessfulExecutorOutputForLimitPatterns() {
+        PromptQueue queue = queue();
+        Prompt prompt = prompt(queue, "Explain rate limits", 0, 0);
+
+        givenQueue(queue);
+        givenPrompts(queue, prompt);
+        givenExecutorResult(new ExecutionResult(
+            0,
+            "A rate limit controls request frequency",
+            "",
+            "A rate limit controls request frequency",
+            null
+        ));
+
+        RunNextPromptResult result = service.runNextPrompt(queue.getId());
+
+        assertThat(result.executed()).isTrue();
+        assertThat(prompt.getStatus()).isEqualTo(PromptStatus.COMPLETED);
+        verify(aiLimitChecker, never()).detectLimit(any(), any());
+    }
+
     private PromptQueue queue() {
         return queue(QueueExecutionPolicy.defaultPolicy());
     }
@@ -522,6 +669,10 @@ class QueueRunnerApplicationServiceTest {
     }
 
     private Prompt prompt(PromptQueue queue, String title, int priority, long position) {
+        return prompt(queue, title, priority, position, null);
+    }
+
+    private Prompt prompt(PromptQueue queue, String title, int priority, long position, String workingDirectoryOverride) {
         return Prompt.createQueued(
             queue.getId(),
             aiToolId,
@@ -530,21 +681,32 @@ class QueueRunnerApplicationServiceTest {
             priority,
             position,
             3,
-            null
+            workingDirectoryOverride
         );
     }
 
     private void givenQueue(PromptQueue queue) {
         when(promptQueueRepository.findById(queue.getId())).thenReturn(Optional.of(queue));
+        when(promptQueueRepository.findByIdForUpdate(queue.getId())).thenReturn(Optional.of(queue));
     }
 
     private void givenPrompts(PromptQueue queue, Prompt... prompts) {
         List<Prompt> promptList = Arrays.asList(prompts);
         when(promptRepository.findByQueueId(queue.getId())).thenReturn(promptList);
         if (!promptList.isEmpty()) {
+            givenProject(queue);
             givenAiToolEnabled(aiToolId);
             givenLimitResult(AiLimitCheckResult.available());
         }
+    }
+
+    private void givenProject(PromptQueue queue) {
+        givenProject(queue, PROJECT_ROOT_DIRECTORY);
+    }
+
+    private void givenProject(PromptQueue queue, String rootDirectory) {
+        when(projectRepository.findById(queue.getProjectId()))
+            .thenReturn(Optional.of(Project.create("Backend", rootDirectory)));
     }
 
     private void givenAiToolEnabled(UUID toolId) {
@@ -605,6 +767,12 @@ class QueueRunnerApplicationServiceTest {
     private PromptExecutionRequest executedRequest() {
         ArgumentCaptor<PromptExecutionRequest> captor = ArgumentCaptor.forClass(PromptExecutionRequest.class);
         verify(promptExecutor).execute(captor.capture());
+        return captor.getValue();
+    }
+
+    private AiLimitCheckRequest limitCheckRequest() {
+        ArgumentCaptor<AiLimitCheckRequest> captor = ArgumentCaptor.forClass(AiLimitCheckRequest.class);
+        verify(aiLimitChecker).checkLimit(captor.capture());
         return captor.getValue();
     }
 }

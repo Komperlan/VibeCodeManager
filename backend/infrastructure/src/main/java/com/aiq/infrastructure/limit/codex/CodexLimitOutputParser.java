@@ -1,9 +1,11 @@
 package com.aiq.infrastructure.limit.codex;
 
 import com.aiq.application.limit.AiLimitCheckResult;
+import com.aiq.domain.execution.ExecutionResult;
 import com.aiq.infrastructure.executor.request.ProcessRunResult;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -47,6 +49,32 @@ public class CodexLimitOutputParser {
                 "Codex limit probe failed with exit code " + result.exitCode()
             )
         );
+    }
+
+    public Optional<AiLimitCheckResult> detectLimit(ExecutionResult result) {
+        Objects.requireNonNull(result, "Execution result must not be null");
+
+        String output = String.join(
+            System.lineSeparator(),
+            result.stdout(),
+            result.stderr(),
+            result.rawOutput(),
+            result.errorMessage() == null ? "" : result.errorMessage()
+        ).toLowerCase();
+        if (!containsLimitPattern(output)) {
+            return Optional.empty();
+        }
+
+        return Optional.of(AiLimitCheckResult.limitReached(
+            firstNonBlank(
+                result.errorMessage(),
+                result.stderr(),
+                result.stdout(),
+                result.rawOutput(),
+                "Codex CLI limit reached"
+            ),
+            null
+        ));
     }
 
     private boolean containsLimitPattern(String output) {

@@ -33,6 +33,12 @@ public class PromptQueueRepositoryAdapter implements PromptQueueRepository {
     }
 
     @Override
+    public Optional<PromptQueue> findByIdForUpdate(UUID queueId) {
+        return promptQueueJpaRepository.findByIdForUpdate(queueId)
+            .map(PromptQueuePersistenceMapper::toDomain);
+    }
+
+    @Override
     public List<PromptQueue> findByProjectId(UUID projectId) {
         return promptQueueJpaRepository.findByProjectId(projectId).stream().map(PromptQueuePersistenceMapper::toDomain).toList();
     }

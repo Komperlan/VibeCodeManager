@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -38,6 +39,13 @@ public class ProcessRunner {
         validate(command);
 
         Instant startedAt = Instant.now();
+        if (!Files.isDirectory(command.workingDirectory())) {
+            return failedResult(
+                Duration.between(startedAt, Instant.now()),
+                "Working directory does not exist or is not a directory: " + command.workingDirectory()
+            );
+        }
+
         Process process;
 
         try {

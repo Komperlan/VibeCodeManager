@@ -1,6 +1,6 @@
 # Vibe Code Manager / текущее состояние проекта
 
-Снимок состояния на 2026-06-18.
+Снимок состояния на 2026-06-19.
 
 Этот файл фиксирует актуальную техническую картину проекта: что уже реализовано,
 как устроены модули, какие проверки проходят и что логично делать дальше.
@@ -19,6 +19,7 @@ Vibe Code Manager - local-first приложение для управления
 - fake executor для разработки и тестов;
 - Codex CLI executor через безопасный `ProcessRunner`;
 - Codex limit checker v1 через probe-запуск;
+- scheduler автоматического возобновления очередей после восстановления лимита;
 - React + TypeScript frontend по Figma Make макету с mock data;
 - Docker Compose с PostgreSQL по умолчанию и demo-профилем для backend/frontend
   на fake executor;
@@ -69,10 +70,13 @@ Application:
 - `PromptQueueApplicationService`;
 - `PromptApplicationService`;
 - `QueueRunnerApplicationService`;
+- `WaitingLimitQueueScheduler`;
 - repository ports для projects, AI tools, queues, prompts, executions;
 - `PromptExecutor` port;
 - `AiLimitChecker` port;
-- DTO и mapper слои для application boundary.
+- DTO и mapper слои для application boundary;
+- `PromptDetails.lastExecution` отдаёт последний сохранённый результат запуска:
+  parsed response text, raw output, stderr, error message и timing metadata.
 
 Infrastructure:
 
@@ -82,13 +86,16 @@ Infrastructure:
 - persistence adapters для application repository ports;
 - `FakePromptExecutor`;
 - `ProcessRunner` на `ProcessBuilder` без shell wrapping;
-- `CodexCliPromptExecutor`;
+- `CodexCliPromptExecutor` запускает Codex с `--sandbox workspace-write`,
+  чтобы prompt-ы могли создавать и менять файлы в рабочей директории;
 - `CodexCommandBuilder`;
 - `CodexOutputParser`;
+- сохранение stdout/stderr/raw output Codex в `prompt_executions`;
 - `FakeAiLimitChecker`;
 - `CodexCliLimitChecker`;
 - `CodexLimitCheckCommandBuilder`;
 - `CodexLimitOutputParser`;
+- pessimistic row locking очереди перед ручным или автоматическим запуском;
 - Docker-aware integration tests.
 
 Adapters:
@@ -108,6 +115,7 @@ Bootstrap:
 
 - `AiqApplication`;
 - application config;
+- Spring Scheduling;
 - Spring Boot packaging;
 - context test с Testcontainers PostgreSQL, который автоматически пропускается,
   если Docker недоступен.
@@ -115,12 +123,19 @@ Bootstrap:
 Docker/runtime:
 
 - основной режим для реального Codex: PostgreSQL в Docker, backend и Codex CLI
-  на хосте;
+  на хосте, backend стартует с `AIQ_EXECUTOR_CODEX_ENABLED=true`;
 - demo-режим: `docker compose --profile demo up --build` поднимает PostgreSQL,
   backend и frontend в Docker;
 - в demo-режиме backend использует fake executor, Codex executor выключен;
+- если backend запущен без `AIQ_EXECUTOR_CODEX_ENABLED=true`, prompt может
+  перейти в `COMPLETED`, но это будет fake execution без изменений файлов;
 - запуск реального Codex внутри контейнера пока не рекомендуется без отдельного
   host-side runner или явных volume mounts для project directories и Codex auth.
+- рабочая директория prompt-а берётся из `workingDirectoryOverride`, а если он
+  пустой — из `rootDirectory` проекта очереди; backend логирует фактический путь
+  перед запуском executor-а.
+- пути вида `~/project` разворачиваются приложением в домашнюю директорию,
+  потому что Codex запускается через `ProcessBuilder` без shell.
 
 ## 4. Frontend: реализовано
 
@@ -185,13 +200,27 @@ Settings и dashboard action `Check Limits` пока работают локал
 - перед запуском prompt `QueueRunnerApplicationService` загружает target AI tool;
 - вызывает `AiLimitChecker`;
 - если статус `AVAILABLE`, prompt исполняется;
-- если статус не `AVAILABLE`, queue переводится в `WAITING_LIMIT`;
+- если статус `LIMIT_REACHED`, queue переводится в `WAITING_LIMIT`;
+- если статус `ERROR` или `UNKNOWN`, queue переводится в `STOPPED` с причиной
+  ошибки проверки лимита;
 - prompt остаётся `QUEUED`;
 - `PromptExecution` не создаётся;
 - executor не вызывается.
 
+Очереди `WAITING_LIMIT` автоматически проверяются каждые 60 секунд. При
+восстановлении лимита scheduler продолжает очередь независимо от `AutoRunMode`,
+так как первоначальный ручной запуск уже считается согласием. За один проход
+выполняется не больше `maxPromptsPerRun`; рабочие часы очереди соблюдаются.
+
+Если лимит обнаружен в результате основного `codex exec`, execution сохраняется
+как неуспешный для диагностики, prompt возвращается в `QUEUED` без расходования
+попытки, а queue переходит в `WAITING_LIMIT`. Pessimistic lock защищает от
+двойного запуска одной очереди scheduler-ом и HTTP-запросом.
+
 Codex checker использует probe prompt через `codex exec`, потому что отдельной
-команды проверки лимитов у Codex CLI нет.
+команды проверки лимитов у Codex CLI нет. Для Codex probe включён fail-open
+режим: техническая ошибка проверки без явного limit-pattern не блокирует основной
+executor. Строгий режим включается через `AIQ_LIMIT_CODEX_FAIL_OPEN_ON_ERROR=false`.
 
 ## 6. Тесты и проверки
 
@@ -221,28 +250,32 @@ npm run build
 - В REST API list queues/list prompts требуют `projectId`/`queueId`, а frontend
   для HTTP-режима пока агрегирует данные через несколько запросов.
 - Нет authentication/authorization.
-- Нет scheduler для автоматического запуска очередей.
 - Нет notifications.
 - Нет полноценного UI CRUD: кнопки создания/редактирования пока являются
   заготовками.
 - Codex limit checker через probe может потреблять минимальный запрос к Codex.
+- Fake executor помечает prompt как успешно выполненный без запуска реального
+  AI CLI. Это ожидаемо для demo/dev режима, но может выглядеть как "prompt
+  выполнился, а код не поменялся".
 - Полностью контейнерный режим предназначен для demo/fake executor. Для реального
   Codex backend лучше запускать на хосте, иначе контейнер не увидит локальные
   пути проектов, установленный Codex CLI и пользовательскую авторизацию.
+- Очередь пока не хранит общий Codex conversation context. Каждый prompt
+  запускается отдельным `codex exec`; последовательность работает через изменения
+  файлов в рабочей директории, а не через автоматическую передачу истории prompt-ов.
 
 ## 8. Что делать дальше
 
 Рекомендуемый порядок:
 
 1. Согласовать frontend DTO с backend response DTO: добавить недостающие поля
-   для root directory, counts, timestamps, queue stats, prompt tool name.
+   для counts, timestamps, queue stats, prompt tool name.
 2. Добавить backend endpoints для dashboard summary и limit check action.
 3. Подключить frontend HTTP mode к реальным endpoint без mock-specific дефолтов.
 4. Реализовать формы CRUD в UI: create project, create AI tool, create queue,
    add prompt.
 5. Добавить frontend tests для основных страниц и API mapping.
-6. Добавить scheduler для auto-run очередей.
-7. Добавить notifications.
-8. Улучшить executor configuration UI и runtime diagnostics.
-9. Спроектировать host-side `agent-runner`, если нужен backend в Docker с
+6. Добавить notifications.
+7. Улучшить executor configuration UI и runtime diagnostics.
+8. Спроектировать host-side `agent-runner`, если нужен backend в Docker с
    реальным запуском Codex на хосте.

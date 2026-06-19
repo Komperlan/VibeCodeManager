@@ -13,6 +13,8 @@ public interface PromptQueueRepository {
 
     Optional<PromptQueue> findById(UUID queueId);
 
+    Optional<PromptQueue> findByIdForUpdate(UUID queueId);
+
     List<PromptQueue> findByProjectId(UUID projectId);
 
     List<PromptQueue> findByStatuses(Collection<QueueStatus> statuses);

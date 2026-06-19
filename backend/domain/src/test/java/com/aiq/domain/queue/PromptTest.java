@@ -63,6 +63,29 @@ class PromptTest {
     }
 
     @Test
+    void shouldDeferRunningPromptWithoutConsumingAttemptWhenLimitIsReached() {
+        Prompt prompt = queuedPrompt(1);
+        prompt.start();
+
+        prompt.deferForLimit();
+
+        assertThat(prompt.getStatus()).isEqualTo(PromptStatus.QUEUED);
+        assertThat(prompt.getAttemptCount()).isZero();
+        assertThat(prompt.startedAt()).isEmpty();
+        assertThat(prompt.finishedAt()).isEmpty();
+        assertThat(prompt.failureReason()).isEmpty();
+    }
+
+    @Test
+    void shouldRejectDeferringPromptThatIsNotRunning() {
+        Prompt prompt = queuedPrompt(1);
+
+        assertThatIllegalStateException()
+            .isThrownBy(prompt::deferForLimit)
+            .withMessage("Only running prompt can be deferred for limit");
+    }
+
+    @Test
     void shouldRejectRetryWhenMaxAttemptsReached() {
         Prompt prompt = queuedPrompt(1);
 

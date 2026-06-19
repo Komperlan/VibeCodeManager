@@ -12,6 +12,7 @@ import type {
   Project,
   ProjectStatus,
   Prompt,
+  PromptDetails,
   PromptStatus,
   Queue,
   QueueStatus,
@@ -21,13 +22,14 @@ import type {
 export interface ApiClient {
   getDashboardSummary(): Promise<DashboardSummary>;
   listProjects(): Promise<Project[]>;
-  createProject(input: CreateProjectInput): Promise<void>;
+  createProject(input: CreateProjectInput): Promise<string>;
   listAiTools(): Promise<AiTool[]>;
-  createAiTool(input: CreateAiToolInput): Promise<void>;
+  createAiTool(input: CreateAiToolInput): Promise<string>;
   listQueues(): Promise<Queue[]>;
-  createQueue(input: CreateQueueInput): Promise<void>;
+  createQueue(input: CreateQueueInput): Promise<string>;
   listPrompts(): Promise<Prompt[]>;
-  createPrompt(input: CreatePromptInput): Promise<void>;
+  getPrompt(promptId: string): Promise<PromptDetails>;
+  createPrompt(input: CreatePromptInput): Promise<string>;
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<AppSettings>;
   runQueue(queueId: string): Promise<RunQueueResult>;
@@ -58,10 +60,11 @@ const mockApi: ApiClient = {
     }),
   listProjects: () => delay(projectsState.map(withProjectStats)),
   createProject: (input) => {
+    const projectId = nextClientId('project');
     projectsState = [
       ...projectsState,
       {
-        id: nextClientId('project'),
+        id: projectId,
         name: input.name,
         rootDirectory: input.rootDirectory,
         status: 'ACTIVE',
@@ -70,14 +73,15 @@ const mockApi: ApiClient = {
         lastActivity: 'Just now',
       },
     ];
-    return delay(undefined);
+    return delay(projectId);
   },
   listAiTools: () => delay([...toolsState]),
   createAiTool: (input) => {
+    const aiToolId = nextClientId('tool');
     toolsState = [
       ...toolsState,
       {
-        id: nextClientId('tool'),
+        id: aiToolId,
         name: input.name,
         type: input.type,
         status: 'ENABLED',
@@ -86,14 +90,15 @@ const mockApi: ApiClient = {
         lastCheck: 'Not checked',
       },
     ];
-    return delay(undefined);
+    return delay(aiToolId);
   },
   listQueues: () => delay([...queuesState]),
   createQueue: (input) => {
+    const queueId = nextClientId('queue');
     queuesState = [
       ...queuesState,
       {
-        id: nextClientId('queue'),
+        id: queueId,
         projectId: input.projectId,
         name: input.name,
         status: 'CREATED',
@@ -108,16 +113,52 @@ const mockApi: ApiClient = {
         updatedAt: 'Just now',
       },
     ];
-    return delay(undefined);
+    return delay(queueId);
   },
   listPrompts: () => delay([...promptsState]),
+  getPrompt: (promptId) => {
+    const prompt = promptsState.find((item) => item.id === promptId);
+    if (!prompt) {
+      return Promise.reject(new Error(`Prompt not found: ${promptId}`));
+    }
+
+    return delay({
+      ...prompt,
+      targetAiToolId: toolsState[0]?.id ?? '',
+      content: 'Mock prompt content is not persisted in the frontend mock store.',
+      workingDirectoryOverride: null,
+      attemptCount: prompt.status === 'COMPLETED' ? 1 : 0,
+      maxAttempts: 3,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      startedAt: prompt.status === 'COMPLETED' ? new Date().toISOString() : null,
+      finishedAt: prompt.status === 'COMPLETED' ? new Date().toISOString() : null,
+      failureReason: prompt.status === 'FAILED' ? 'Mock prompt failed' : null,
+      lastExecution: prompt.status === 'COMPLETED'
+        ? {
+            executionId: `${prompt.id}-execution`,
+            status: 'COMPLETED',
+            command: 'mock-executor',
+            exitCode: 0,
+            responseText: `Mock response for "${prompt.title}"`,
+            stderr: null,
+            rawOutput: `Mock response for "${prompt.title}"`,
+            errorMessage: null,
+            startedAt: new Date().toISOString(),
+            finishedAt: new Date().toISOString(),
+            durationMillis: 100,
+          }
+        : null,
+    });
+  },
   createPrompt: (input) => {
+    const promptId = nextClientId('prompt');
     const targetTool = toolsState.find((tool) => tool.id === input.targetAiToolId);
     const nextPosition = nextPromptPosition(input.queueId);
     promptsState = [
       ...promptsState,
       {
-        id: nextClientId('prompt'),
+        id: promptId,
         queueId: input.queueId,
         title: input.title,
         status: 'QUEUED',
@@ -139,7 +180,7 @@ const mockApi: ApiClient = {
       };
     });
 
-    return delay(undefined);
+    return delay(promptId);
   },
   getSettings: () => delay({ ...settingsState }),
   updateSettings: (settings) => {
@@ -198,6 +239,15 @@ interface ProjectSummaryResponse {
   status: ProjectStatus;
 }
 
+interface ProjectDetailsResponse {
+  id: string;
+  name: string;
+  rootDirectory: string;
+  status: ProjectStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface AiToolSummaryResponse {
   id: string;
   name: string;
@@ -217,6 +267,42 @@ interface PromptSummaryResponse {
   status: PromptStatus;
   priority: number;
   position: number;
+}
+
+interface PromptDetailsResponse {
+  id: string;
+  queueId: string;
+  targetAiToolId: string;
+  title: string;
+  content: string;
+  status: PromptStatus;
+  priority: number;
+  position: number;
+  workingDirectoryOverride: string | null;
+  attemptCount: number;
+  maxAttempts: number;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  failureReason: string | null;
+  lastExecution: PromptDetails['lastExecution'];
+}
+
+interface CreateProjectResponse {
+  projectId: string;
+}
+
+interface CreateAiToolResponse {
+  aiToolId: string;
+}
+
+interface CreateQueueResponse {
+  queueId: string;
+}
+
+interface AddPromptResponse {
+  promptId: string;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -258,16 +344,28 @@ async function errorMessage(response: Response): Promise<string> {
 
 async function listHttpProjects(): Promise<Project[]> {
   const projects = await request<ProjectSummaryResponse[]>('/api/v1/projects');
+  const projectDetails = await Promise.all(
+    projects.map((project) => request<ProjectDetailsResponse>(`/api/v1/projects/${encodeURIComponent(project.id)}`)),
+  );
 
-  return projects.map((project) => ({
+  return projectDetails.map((project) => ({
     id: project.id,
     name: project.name,
     status: project.status,
-    rootDirectory: 'Load project details to show root directory',
+    rootDirectory: project.rootDirectory,
     queueCount: 0,
     promptCount: 0,
-    lastActivity: 'From backend',
+    lastActivity: formatBackendInstant(project.updatedAt),
   }));
+}
+
+function formatBackendInstant(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'From backend';
+  }
+
+  return date.toLocaleString();
 }
 
 async function listHttpAiTools(): Promise<AiTool[]> {
@@ -332,6 +430,31 @@ async function listHttpPrompts(queues?: Queue[]): Promise<Prompt[]> {
   return promptsByQueue.flat();
 }
 
+async function getHttpPrompt(promptId: string): Promise<PromptDetails> {
+  const prompt = await request<PromptDetailsResponse>(`/api/v1/prompts/${encodeURIComponent(promptId)}`);
+
+  return {
+    id: prompt.id,
+    queueId: prompt.queueId,
+    targetAiToolId: prompt.targetAiToolId,
+    title: prompt.title,
+    content: prompt.content,
+    status: prompt.status,
+    priority: prompt.priority,
+    position: prompt.position,
+    workingDirectoryOverride: prompt.workingDirectoryOverride,
+    attemptCount: prompt.attemptCount,
+    maxAttempts: prompt.maxAttempts,
+    createdAt: prompt.createdAt,
+    updatedAt: prompt.updatedAt,
+    startedAt: prompt.startedAt,
+    finishedAt: prompt.finishedAt,
+    failureReason: prompt.failureReason,
+    lastExecution: prompt.lastExecution,
+    toolName: 'From backend',
+  };
+}
+
 const httpApi: ApiClient = {
   getDashboardSummary: async () => {
     const [projects, tools] = await Promise.all([listHttpProjects(), listHttpAiTools()]);
@@ -349,19 +472,19 @@ const httpApi: ApiClient = {
   },
   listProjects: listHttpProjects,
   createProject: (input) =>
-    request<void>('/api/v1/projects', {
+    request<CreateProjectResponse>('/api/v1/projects', {
       method: 'POST',
       body: JSON.stringify(input),
-    }),
+    }).then((response) => response.projectId),
   listAiTools: listHttpAiTools,
   createAiTool: (input) =>
-    request<void>('/api/v1/ai-tools', {
+    request<CreateAiToolResponse>('/api/v1/ai-tools', {
       method: 'POST',
       body: JSON.stringify(input),
-    }),
+    }).then((response) => response.aiToolId),
   listQueues: () => listHttpQueues(),
   createQueue: (input) =>
-    request<void>('/api/v1/queues', {
+    request<CreateQueueResponse>('/api/v1/queues', {
       method: 'POST',
       body: JSON.stringify({
         projectId: input.projectId,
@@ -375,13 +498,14 @@ const httpApi: ApiClient = {
           workingHours: null,
         },
       }),
-    }),
+    }).then((response) => response.queueId),
   listPrompts: () => listHttpPrompts(),
+  getPrompt: getHttpPrompt,
   createPrompt: (input) =>
-    request<void>('/api/v1/prompts', {
+    request<AddPromptResponse>('/api/v1/prompts', {
       method: 'POST',
       body: JSON.stringify(input),
-    }),
+    }).then((response) => response.promptId),
   getSettings: async () => ({
     ...settingsState,
     backendBaseUrl: API_BASE_URL || 'http://127.0.0.1:8080',

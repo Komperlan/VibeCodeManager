@@ -27,6 +27,8 @@ class CodexCommandBuilderTest {
             "--json",
             "--color",
             "never",
+            "--sandbox",
+            "workspace-write",
             "--skip-git-repo-check",
             "-"
         );
@@ -46,7 +48,7 @@ class CodexCommandBuilderTest {
         String command = builder.buildSafeCommand(request("/tmp/project"));
 
         assertThat(command)
-            .isEqualTo("/usr/local/bin/codex exec --json --color never --skip-git-repo-check -")
+            .isEqualTo("/usr/local/bin/codex exec --json --color never --sandbox workspace-write --skip-git-repo-check -")
             .doesNotContain("Run tests and fix failures");
     }
 
@@ -59,6 +61,28 @@ class CodexCommandBuilderTest {
         assertThat(command.workingDirectory()).isEqualTo(Path.of("").toAbsolutePath().normalize());
     }
 
+    @Test
+    void shouldExpandHomeDirectoryInWorkingDirectoryOverride() {
+        CodexCommandBuilder builder = new CodexCommandBuilder(properties());
+
+        ProcessCommand command = builder.build(request("~/testDirForVCManager"));
+
+        assertThat(command.workingDirectory())
+            .isEqualTo(Path.of(System.getProperty("user.home"), "testDirForVCManager").toAbsolutePath().normalize());
+    }
+
+    @Test
+    void shouldExpandHomeDirectoryInExecutablePath() {
+        CodexCliProperties properties = properties();
+        properties.setExecutablePath(Path.of("~/bin/codex"));
+        CodexCommandBuilder builder = new CodexCommandBuilder(properties);
+
+        ProcessCommand command = builder.build(request("/tmp/project"));
+
+        assertThat(command.arguments().getFirst())
+            .isEqualTo(Path.of(System.getProperty("user.home"), "bin/codex").toString());
+    }
+
     private CodexCliProperties properties() {
         CodexCliProperties properties = new CodexCliProperties();
         properties.setExecutablePath(Path.of("/usr/local/bin/codex"));
@@ -67,6 +91,8 @@ class CodexCommandBuilderTest {
             "--json",
             "--color",
             "never",
+            "--sandbox",
+            "workspace-write",
             "--skip-git-repo-check",
             "-"
         ));

@@ -42,6 +42,8 @@ public class CodexCliProperties {
             "--json",
             "--color",
             "never",
+            "--sandbox",
+            "workspace-write",
             "--skip-git-repo-check",
             "-"
         ));

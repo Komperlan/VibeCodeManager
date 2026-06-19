@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.aiq.application.limit.AiLimitCheckRequest;
 import com.aiq.application.limit.AiLimitStatus;
 import com.aiq.domain.aitool.AiToolType;
+import com.aiq.domain.execution.ExecutionResult;
 import com.aiq.infrastructure.executor.ProcessRunner;
 import com.aiq.infrastructure.executor.codex.CodexCliProperties;
 import com.aiq.infrastructure.executor.request.ProcessCommand;
@@ -29,7 +30,8 @@ class CodexCliLimitCheckerTest {
     private final CodexCliLimitChecker checker = new CodexCliLimitChecker(
         processRunner,
         new CodexLimitCheckCommandBuilder(codexProperties, limitProperties),
-        new CodexLimitOutputParser()
+        new CodexLimitOutputParser(),
+        limitProperties
     );
 
     @Test
@@ -71,6 +73,62 @@ class CodexCliLimitCheckerTest {
 
         assertThat(result.status()).isEqualTo(AiLimitStatus.ERROR);
         assertThat(result.reason()).contains("supports only CODEX tools");
+        verify(processRunner, never()).run(any());
+    }
+
+    @Test
+    void shouldFailOpenOnTechnicalProbeErrorByDefault() {
+        when(processRunner.run(any())).thenReturn(new ProcessRunResult(
+            2,
+            "",
+            "auth failed",
+            "auth failed",
+            Duration.ofMillis(100),
+            false,
+            null
+        ));
+
+        var result = checker.checkLimit(request(AiToolType.CODEX));
+
+        assertThat(result.status()).isEqualTo(AiLimitStatus.AVAILABLE);
+    }
+
+    @Test
+    void shouldReturnTechnicalProbeErrorWhenFailOpenIsDisabled() {
+        CodexLimitCheckerProperties strictLimitProperties = limitProperties();
+        strictLimitProperties.setFailOpenOnError(false);
+        CodexCliLimitChecker strictChecker = new CodexCliLimitChecker(
+            processRunner,
+            new CodexLimitCheckCommandBuilder(codexProperties, strictLimitProperties),
+            new CodexLimitOutputParser(),
+            strictLimitProperties
+        );
+        when(processRunner.run(any())).thenReturn(new ProcessRunResult(
+            2,
+            "",
+            "auth failed",
+            "auth failed",
+            Duration.ofMillis(100),
+            false,
+            null
+        ));
+
+        var result = strictChecker.checkLimit(request(AiToolType.CODEX));
+
+        assertThat(result.status()).isEqualTo(AiLimitStatus.ERROR);
+        assertThat(result.reason()).isEqualTo("auth failed");
+    }
+
+    @Test
+    void shouldDetectLimitInExecutorResultWithoutStartingProbe() {
+        var result = checker.detectLimit(
+            request(AiToolType.CODEX),
+            new ExecutionResult(1, "", "usage limit reached", "usage limit reached", null)
+        );
+
+        assertThat(result).hasValueSatisfying(limit ->
+            assertThat(limit.status()).isEqualTo(AiLimitStatus.LIMIT_REACHED)
+        );
         verify(processRunner, never()).run(any());
     }
 

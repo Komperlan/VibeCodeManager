@@ -21,6 +21,7 @@ public record PromptDetails(
     Instant updatedAt,
     Optional<Instant> startedAt,
     Optional<Instant> finishedAt,
-    Optional<String> failureReason
+    Optional<String> failureReason,
+    Optional<PromptExecutionResultDetails> lastExecution
 ) {
 }

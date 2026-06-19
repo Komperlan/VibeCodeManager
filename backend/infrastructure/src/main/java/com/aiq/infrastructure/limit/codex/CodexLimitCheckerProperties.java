@@ -42,6 +42,8 @@ public class CodexLimitCheckerProperties {
     @NotBlank(message = "codex limit checker probePrompt must not be blank")
     private String probePrompt = "Reply exactly AVAILABLE. Do not inspect files, run commands, or modify anything.";
 
+    private boolean failOpenOnError = true;
+
     @AssertTrue(message = "codex limit checker timeout must be positive")
     public boolean isTimeoutPositive() {
         return timeout == null || (!timeout.isZero() && !timeout.isNegative());

@@ -46,6 +46,34 @@ export interface Prompt {
   toolName: string;
 }
 
+export interface PromptExecutionResult {
+  executionId: string;
+  status: string;
+  command: string;
+  exitCode: number | null;
+  responseText: string | null;
+  stderr: string | null;
+  rawOutput: string | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMillis: number | null;
+}
+
+export interface PromptDetails extends Prompt {
+  targetAiToolId: string;
+  content: string;
+  workingDirectoryOverride: string | null;
+  attemptCount: number;
+  maxAttempts: number;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  failureReason: string | null;
+  lastExecution: PromptExecutionResult | null;
+}
+
 export interface Queue {
   id: string;
   projectId: string;

@@ -29,6 +29,10 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +44,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.Container;
@@ -71,6 +77,9 @@ class PersistenceAdapterIntegrationTest {
 
     @Autowired
     private PromptExecutionRepository promptExecutionRepository;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @DynamicPropertySource
     static void configureDatabase(DynamicPropertyRegistry registry) {
@@ -161,6 +170,41 @@ class PersistenceAdapterIntegrationTest {
                 assertThat(restoredPolicy.stopOnError()).isFalse();
                 assertThat(restoredPolicy.workingHours().zoneId()).isEqualTo(ZoneId.of("Europe/Moscow"));
             });
+    }
+
+    @Test
+    void promptQueueRepositoryShouldHoldPessimisticLockUntilTransactionCompletes() throws Exception {
+        PromptQueue queue = savedQueueFixture().queue();
+        CountDownLatch firstLockAcquired = new CountDownLatch(1);
+        CountDownLatch releaseFirstLock = new CountDownLatch(1);
+        AtomicBoolean secondLockAcquired = new AtomicBoolean(false);
+        var executor = Executors.newFixedThreadPool(2);
+        TransactionTemplate transactions = new TransactionTemplate(transactionManager);
+
+        try {
+            var first = executor.submit(() -> transactions.executeWithoutResult(status -> {
+                assertThat(promptQueueRepository.findByIdForUpdate(queue.getId())).isPresent();
+                firstLockAcquired.countDown();
+                await(releaseFirstLock);
+            }));
+            assertThat(firstLockAcquired.await(5, TimeUnit.SECONDS)).isTrue();
+
+            var second = executor.submit(() -> transactions.executeWithoutResult(status -> {
+                assertThat(promptQueueRepository.findByIdForUpdate(queue.getId())).isPresent();
+                secondLockAcquired.set(true);
+            }));
+
+            Thread.sleep(200);
+            assertThat(secondLockAcquired).isFalse();
+
+            releaseFirstLock.countDown();
+            first.get(5, TimeUnit.SECONDS);
+            second.get(5, TimeUnit.SECONDS);
+            assertThat(secondLockAcquired).isTrue();
+        } finally {
+            releaseFirstLock.countDown();
+            executor.shutdownNow();
+        }
     }
 
     @Test
@@ -280,6 +324,15 @@ class PersistenceAdapterIntegrationTest {
 
     private Project savedProject(String name, String rootDirectory) {
         return projectRepository.save(Project.create(name, rootDirectory));
+    }
+
+    private void await(CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting in persistence test", exception);
+        }
     }
 
     @SpringBootConfiguration

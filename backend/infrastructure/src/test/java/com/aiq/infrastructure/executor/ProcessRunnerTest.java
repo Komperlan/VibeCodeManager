@@ -129,6 +129,23 @@ class ProcessRunnerTest {
     }
 
     @Test
+    void shouldReturnClearErrorWhenWorkingDirectoryDoesNotExist() {
+        Path missingDirectory = workingDirectory.resolve("missing");
+        ProcessRunResult result = runner.run(new ProcessCommand(
+            javaCommand(List.of("stdout")),
+            missingDirectory,
+            null,
+            Map.of(),
+            Duration.ofSeconds(5),
+            DEFAULT_MAX_OUTPUT_BYTES
+        ));
+
+        assertThat(result.exitCode()).isEqualTo(-1);
+        assertThat(result.errorMessage()).contains("Working directory does not exist");
+        assertThat(result.errorMessage()).contains(missingDirectory.toString());
+    }
+
+    @Test
     void shouldMergeCustomEnvironment() {
         ProcessRunResult result = runner.run(command(
             List.of("environment", "AIQ_TEST_ENV"),

@@ -18,6 +18,7 @@ import type {
   PageId,
   Project,
   Prompt,
+  PromptDetails,
   Queue,
   RunQueueResult,
 } from './types';
@@ -31,14 +32,20 @@ export function App() {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
+  const [selectedPromptDetails, setSelectedPromptDetails] = useState<PromptDetails | null>(null);
   const [lastRun, setLastRun] = useState<RunQueueResult | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const selectedQueue = useMemo(
-    () => queues.find((queue) => queue.status === 'RUNNING') ?? queues.find((queue) => queue.projectId === selectedProjectId) ?? queues[0],
-    [queues, selectedProjectId],
+    () =>
+      queues.find((queue) => queue.id === selectedQueueId)
+      ?? queues.find((queue) => queue.status === 'RUNNING')
+      ?? queues.find((queue) => queue.projectId === selectedProjectId)
+      ?? queues[0],
+    [queues, selectedProjectId, selectedQueueId],
   );
 
   useEffect(() => {
@@ -65,12 +72,27 @@ export function App() {
     setQueues(nextQueues);
     setPrompts(nextPrompts);
     setSettings(nextSettings);
-    setSelectedProjectId((currentProjectId) => {
-      if (currentProjectId && nextProjects.some((project) => project.id === currentProjectId)) {
-        return currentProjectId;
+    setSelectedPromptDetails((currentPrompt) => {
+      if (!currentPrompt || nextPrompts.some((prompt) => prompt.id === currentPrompt.id)) {
+        return currentPrompt;
       }
 
-      return nextProjects[0]?.id ?? null;
+      return null;
+    });
+    const nextSelectedProjectId = selectedProjectId && nextProjects.some((project) => project.id === selectedProjectId)
+      ? selectedProjectId
+      : nextProjects[0]?.id ?? null;
+
+    setSelectedProjectId(nextSelectedProjectId);
+    setSelectedQueueId((currentQueueId) => {
+      if (currentQueueId && nextQueues.some((queue) => queue.id === currentQueueId)) {
+        return currentQueueId;
+      }
+
+      return nextQueues.find((queue) => queue.status === 'RUNNING')?.id
+        ?? nextQueues.find((queue) => queue.projectId === nextSelectedProjectId)?.id
+        ?? nextQueues[0]?.id
+        ?? null;
     });
   }
 
@@ -87,7 +109,38 @@ export function App() {
   }
 
   function handleSelectProject(projectId: string) {
-    setSelectedProjectId(projectId || null);
+    const nextProjectId = projectId || null;
+    setSelectedProjectId(nextProjectId);
+    setSelectedQueueId((currentQueueId) => {
+      if (!nextProjectId) {
+        return currentQueueId && queues.some((queue) => queue.id === currentQueueId)
+          ? currentQueueId
+          : queues[0]?.id ?? null;
+      }
+
+      const currentQueue = queues.find((queue) => queue.id === currentQueueId);
+      if (currentQueue?.projectId === nextProjectId) {
+        return currentQueueId;
+      }
+
+      return queues.find((queue) => queue.projectId === nextProjectId)?.id ?? null;
+    });
+  }
+
+  function handleSelectQueue(queueId: string) {
+    setSelectedQueueId(queueId || null);
+  }
+
+  function handleSelectPrompt(promptId: string) {
+    void runAction(async () => {
+      const details = await api.getPrompt(promptId);
+      setSelectedPromptDetails(details);
+      setSelectedQueueId(details.queueId);
+      const queue = queues.find((item) => item.id === details.queueId);
+      if (queue) {
+        setSelectedProjectId(queue.projectId);
+      }
+    });
   }
 
   function handleRunQueue(queueId: string) {
@@ -95,13 +148,18 @@ export function App() {
       const result = await api.runQueue(queueId);
       setLastRun(result);
       setNotice(result.reason);
+      await refreshWorkspace();
+      if (selectedPromptDetails) {
+        setSelectedPromptDetails(await api.getPrompt(selectedPromptDetails.id));
+      }
     });
   }
 
   function handleCreateProject(input: CreateProjectInput) {
     void runAction(async () => {
-      await api.createProject(input);
+      const projectId = await api.createProject(input);
       await refreshWorkspace();
+      setSelectedProjectId(projectId);
       setNotice(`Project "${input.name}" created`);
     });
   }
@@ -116,9 +174,10 @@ export function App() {
 
   function handleCreateQueue(input: CreateQueueInput) {
     void runAction(async () => {
-      await api.createQueue(input);
+      const queueId = await api.createQueue(input);
       await refreshWorkspace();
       setSelectedProjectId(input.projectId);
+      setSelectedQueueId(queueId);
       setNotice(`Queue "${input.name}" created`);
     });
   }
@@ -131,6 +190,7 @@ export function App() {
       if (targetQueue) {
         setSelectedProjectId(targetQueue.projectId);
       }
+      setSelectedQueueId(input.queueId);
       setNotice(`Prompt "${input.title}" added`);
     });
   }
@@ -173,6 +233,7 @@ export function App() {
           <DashboardPage
             summary={summary}
             queues={queues}
+            selectedQueue={selectedQueue}
             prompts={prompts}
             tools={tools}
             lastRun={lastRun}
@@ -208,7 +269,11 @@ export function App() {
             queues={queues}
             prompts={prompts}
             selectedProjectId={selectedProjectId}
+            selectedQueueId={selectedQueueId}
+            selectedPromptDetails={selectedPromptDetails}
             onSelectProject={handleSelectProject}
+            onSelectQueue={handleSelectQueue}
+            onSelectPrompt={handleSelectPrompt}
             loading={loading}
             onCreateQueue={handleCreateQueue}
             onCreatePrompt={handleCreatePrompt}

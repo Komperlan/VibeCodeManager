@@ -46,4 +46,27 @@ class CodexLimitCheckCommandBuilderTest {
             "/tmp/project"
         ))).doesNotContain("probe only");
     }
+
+    @Test
+    void shouldExpandHomeDirectoryForProbeCommand() {
+        CodexLimitCheckerProperties limitProperties = new CodexLimitCheckerProperties();
+        limitProperties.setArguments(List.of("exec", "-"));
+
+        CodexCliProperties codexProperties = new CodexCliProperties();
+        codexProperties.setExecutablePath(Path.of("~/bin/codex"));
+
+        CodexLimitCheckCommandBuilder builder = new CodexLimitCheckCommandBuilder(codexProperties, limitProperties);
+
+        var command = builder.build(new AiLimitCheckRequest(
+            UUID.randomUUID(),
+            AiToolType.CODEX,
+            "ignored-by-codex-properties",
+            "~/testDirForVCManager"
+        ));
+
+        assertThat(command.arguments().getFirst())
+            .isEqualTo(Path.of(System.getProperty("user.home"), "bin/codex").toString());
+        assertThat(command.workingDirectory())
+            .isEqualTo(Path.of(System.getProperty("user.home"), "testDirForVCManager").toAbsolutePath().normalize());
+    }
 }

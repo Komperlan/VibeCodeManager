@@ -3,6 +3,7 @@ package com.aiq.infrastructure.limit.codex;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.aiq.application.limit.AiLimitStatus;
+import com.aiq.domain.execution.ExecutionResult;
 import com.aiq.infrastructure.executor.request.ProcessRunResult;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,35 @@ class CodexLimitOutputParserTest {
 
         assertThat(result.status()).isEqualTo(AiLimitStatus.ERROR);
         assertThat(result.reason()).isEqualTo("auth failed");
+    }
+
+    @Test
+    void shouldDetectLimitInPromptExecutionResult() {
+        var result = parser.detectLimit(new ExecutionResult(
+            1,
+            "",
+            "Too Many Requests: 429",
+            "Too Many Requests: 429",
+            "Codex CLI exited with code 1"
+        ));
+
+        assertThat(result).hasValueSatisfying(limit -> {
+            assertThat(limit.status()).isEqualTo(AiLimitStatus.LIMIT_REACHED);
+            assertThat(limit.reason()).contains("Codex CLI exited with code 1");
+        });
+    }
+
+    @Test
+    void shouldIgnoreOrdinaryPromptExecutionFailure() {
+        var result = parser.detectLimit(new ExecutionResult(
+            1,
+            "",
+            "Compilation failed",
+            "Compilation failed",
+            "Compilation failed"
+        ));
+
+        assertThat(result).isEmpty();
     }
 
     private ProcessRunResult processResult(

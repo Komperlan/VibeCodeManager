@@ -2,6 +2,7 @@ package com.aiq.application.service;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -9,10 +10,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.aiq.application.limit.AiLimitCheckRequest;
 import com.aiq.application.limit.AiLimitCheckResult;
+import com.aiq.application.limit.AiLimitStatus;
+import com.aiq.application.path.LocalPathNormalizer;
 import com.aiq.application.port.out.AiLimitChecker;
 import com.aiq.application.port.out.AiToolRepository;
 import com.aiq.application.port.out.PromptExecutionRepository;
 import com.aiq.application.port.out.PromptExecutor;
+import com.aiq.application.port.out.ProjectRepository;
 import com.aiq.application.port.out.PromptQueueRepository;
 import com.aiq.application.port.out.PromptRepository;
 import com.aiq.application.runner.PromptExecutionRequest;
@@ -22,20 +26,24 @@ import com.aiq.application.runner.dto.RunQueueResult;
 import com.aiq.domain.aitool.AiTool;
 import com.aiq.domain.execution.ExecutionResult;
 import com.aiq.domain.execution.PromptExecution;
+import com.aiq.domain.project.Project;
 import com.aiq.domain.queue.NextPromptSelector;
 import com.aiq.domain.queue.Prompt;
 import com.aiq.domain.queue.PromptQueue;
 import com.aiq.domain.queue.QueueStatus;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @Transactional
 @RequiredArgsConstructor
+@Slf4j
 public class QueueRunnerApplicationService {
 
     private final PromptQueueRepository promptQueueRepository;
     private final PromptRepository promptRepository;
+    private final ProjectRepository projectRepository;
     private final AiToolRepository aiToolRepository;
     private final PromptExecutionRepository promptExecutionRepository;
     private final AiLimitChecker aiLimitChecker;
@@ -48,8 +56,26 @@ public class QueueRunnerApplicationService {
             throw new IllegalArgumentException("Max prompts must be positive");
         }
 
-        PromptQueue queue = findQueueRequired(command.queueId());
-        int maxPrompts = Math.min(command.maxPrompts(), queue.getExecutionPolicy().maxPromptsPerRun());
+        PromptQueue queue = findQueueForExecutionRequired(command.queueId());
+        return runQueue(queue, command.maxPrompts());
+    }
+
+    public RunQueueResult resumeWaitingLimitQueue(UUID queueId) {
+        PromptQueue queue = findQueueForExecutionRequired(queueId);
+        if (queue.getStatus() != QueueStatus.WAITING_LIMIT) {
+            return new RunQueueResult(
+                queue.getId(),
+                0,
+                false,
+                "Queue is no longer waiting for limit"
+            );
+        }
+
+        return runQueue(queue, queue.getExecutionPolicy().maxPromptsPerRun());
+    }
+
+    private RunQueueResult runQueue(PromptQueue queue, int requestedMaxPrompts) {
+        int maxPrompts = Math.min(requestedMaxPrompts, queue.getExecutionPolicy().maxPromptsPerRun());
         int executedPromptsCount = 0;
 
         String reason = "Run limit reached";
@@ -83,7 +109,7 @@ public class QueueRunnerApplicationService {
     }
 
     public RunNextPromptResult runNextPrompt(UUID queueId) {
-        PromptQueue queue = findQueueRequired(queueId);
+        PromptQueue queue = findQueueForExecutionRequired(queueId);
         if (!canExecute(queue)) {
             return new RunNextPromptResult(queue.getId(), null, false, "Queue cannot run from " + queue.getStatus());
         }
@@ -96,9 +122,19 @@ public class QueueRunnerApplicationService {
 
     private RunNextPromptResult executePrompt(PromptQueue queue, Prompt prompt) {
         AiTool aiTool = findEnabledAiToolRequired(prompt.getTargetAiToolId());
-        AiLimitCheckResult limitCheckResult = checkLimit(prompt, aiTool);
+        String workingDirectory = resolveWorkingDirectory(queue, prompt);
+        log.info(
+            "Preparing prompt {} from queue {} with AI tool {} in working directory {}",
+            prompt.getId(),
+            queue.getId(),
+            aiTool.getId(),
+            workingDirectory
+        );
+
+        AiLimitCheckRequest limitCheckRequest = limitCheckRequest(aiTool, workingDirectory);
+        AiLimitCheckResult limitCheckResult = checkLimit(limitCheckRequest);
         if (!limitCheckResult.isAvailable()) {
-            return waitForLimit(queue, prompt, limitCheckResult);
+            return handleUnavailableLimit(queue, prompt, limitCheckResult);
         }
 
         startQueueIfNeeded(queue);
@@ -108,7 +144,7 @@ public class QueueRunnerApplicationService {
             prompt.getTargetAiToolId(),
             prompt.getTitle(),
             prompt.getContent(),
-            prompt.workingDirectoryOverride().orElse(null)
+            workingDirectory
         );
         PromptExecution execution = PromptExecution.create(
             prompt.getId(),
@@ -121,6 +157,13 @@ public class QueueRunnerApplicationService {
 
         ExecutionResult executionResult = execute(request);
         execution.complete(executionResult);
+
+        Optional<AiLimitCheckResult> executionLimit = executionResult.isFailed()
+            ? detectExecutionLimit(limitCheckRequest, executionResult)
+            : Optional.empty();
+        if (executionLimit.isPresent()) {
+            return waitForLimitAfterExecution(queue, prompt, execution, executionLimit.orElseThrow());
+        }
 
         if (executionResult.isSuccessful()) {
             prompt.complete();
@@ -144,14 +187,22 @@ public class QueueRunnerApplicationService {
         );
     }
 
-    private AiLimitCheckResult checkLimit(Prompt prompt, AiTool aiTool) {
-        AiLimitCheckRequest request = new AiLimitCheckRequest(
+    private String resolveWorkingDirectory(PromptQueue queue, Prompt prompt) {
+        String workingDirectory = prompt.workingDirectoryOverride()
+            .orElseGet(() -> findProjectRequired(queue.getProjectId()).getRootDirectory());
+        return LocalPathNormalizer.normalizeDirectory(workingDirectory);
+    }
+
+    private AiLimitCheckRequest limitCheckRequest(AiTool aiTool, String workingDirectory) {
+        return new AiLimitCheckRequest(
             aiTool.getId(),
             aiTool.getType(),
             aiTool.getExecutablePath(),
-            prompt.workingDirectoryOverride().orElse(null)
+            workingDirectory
         );
+    }
 
+    private AiLimitCheckResult checkLimit(AiLimitCheckRequest request) {
         try {
             AiLimitCheckResult result = aiLimitChecker.checkLimit(request);
             return result == null ? AiLimitCheckResult.error("AI limit checker returned null") : result;
@@ -163,6 +214,39 @@ public class QueueRunnerApplicationService {
         }
     }
 
+    private Optional<AiLimitCheckResult> detectExecutionLimit(
+        AiLimitCheckRequest request,
+        ExecutionResult executionResult
+    ) {
+        try {
+            Optional<AiLimitCheckResult> result = aiLimitChecker.detectLimit(request, executionResult);
+            if (result == null) {
+                log.warn("AI limit checker returned null while inspecting execution result for tool {}", request.aiToolId());
+                return Optional.empty();
+            }
+            return result.filter(limit -> limit.status() == AiLimitStatus.LIMIT_REACHED);
+        } catch (RuntimeException exception) {
+            log.warn(
+                "Failed to inspect execution result for AI limit of tool {}: {}",
+                request.aiToolId(),
+                exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage()
+            );
+            return Optional.empty();
+        }
+    }
+
+    private RunNextPromptResult handleUnavailableLimit(
+        PromptQueue queue,
+        Prompt prompt,
+        AiLimitCheckResult limitCheckResult
+    ) {
+        if (limitCheckResult.status() == AiLimitStatus.LIMIT_REACHED) {
+            return waitForLimit(queue, prompt, limitCheckResult);
+        }
+
+        return stopOnLimitCheckFailure(queue, prompt, limitCheckResult);
+    }
+
     private RunNextPromptResult waitForLimit(PromptQueue queue, Prompt prompt, AiLimitCheckResult limitCheckResult) {
         queue.markWaitingLimit();
         promptQueueRepository.save(queue);
@@ -172,6 +256,44 @@ public class QueueRunnerApplicationService {
             prompt.getId(),
             false,
             limitCheckResult.reason()
+        );
+    }
+
+    private RunNextPromptResult waitForLimitAfterExecution(
+        PromptQueue queue,
+        Prompt prompt,
+        PromptExecution execution,
+        AiLimitCheckResult limitCheckResult
+    ) {
+        prompt.deferForLimit();
+        queue.markWaitingLimit();
+
+        promptExecutionRepository.save(execution);
+        promptRepository.save(prompt);
+        promptQueueRepository.save(queue);
+
+        return new RunNextPromptResult(
+            queue.getId(),
+            prompt.getId(),
+            false,
+            limitCheckResult.reason()
+        );
+    }
+
+    private RunNextPromptResult stopOnLimitCheckFailure(
+        PromptQueue queue,
+        Prompt prompt,
+        AiLimitCheckResult limitCheckResult
+    ) {
+        String reason = "AI limit check failed: " + limitCheckResult.reason();
+        queue.stop(reason);
+        promptQueueRepository.save(queue);
+
+        return new RunNextPromptResult(
+            queue.getId(),
+            prompt.getId(),
+            false,
+            reason
         );
     }
 
@@ -260,6 +382,18 @@ public class QueueRunnerApplicationService {
         Objects.requireNonNull(queueId, "Queue id must not be null");
         return promptQueueRepository.findById(queueId)
             .orElseThrow(() -> new IllegalArgumentException("Prompt queue not found: " + queueId));
+    }
+
+    private PromptQueue findQueueForExecutionRequired(UUID queueId) {
+        Objects.requireNonNull(queueId, "Queue id must not be null");
+        return promptQueueRepository.findByIdForUpdate(queueId)
+            .orElseThrow(() -> new IllegalArgumentException("Prompt queue not found: " + queueId));
+    }
+
+    private Project findProjectRequired(UUID projectId) {
+        Objects.requireNonNull(projectId, "Project id must not be null");
+        return projectRepository.findById(projectId)
+            .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
     }
 
     private AiTool findEnabledAiToolRequired(UUID aiToolId) {

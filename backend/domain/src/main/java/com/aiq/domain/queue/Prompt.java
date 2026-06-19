@@ -241,6 +241,16 @@ public class Prompt extends AggregateRoot {
         this.updatedAt = finishedAt;
     }
 
+    public void deferForLimit() {
+        ensureStatus(PromptStatus.RUNNING, "Only running prompt can be deferred for limit");
+        this.attemptCount--;
+        this.status = PromptStatus.QUEUED;
+        this.startedAt = null;
+        this.finishedAt = null;
+        this.failureReason = null;
+        this.updatedAt = Instant.now();
+    }
+
     public void retry() {
         ensureStatus(PromptStatus.FAILED, "Prompt can be retried only from FAILED status");
         if (!canRetry()) {
