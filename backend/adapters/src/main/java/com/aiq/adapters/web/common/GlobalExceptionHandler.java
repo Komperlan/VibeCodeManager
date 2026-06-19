@@ -21,6 +21,8 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
 @RestControllerAdvice
@@ -90,6 +92,24 @@ public class GlobalExceptionHandler {
             HttpStatus.NOT_FOUND,
             "NOT_FOUND",
             safeMessage(exception, "Resource not found")
+        );
+    }
+
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoHandlerFound(NoHandlerFoundException exception) {
+        return buildResponse(
+            HttpStatus.NOT_FOUND,
+            "NOT_FOUND",
+            "API endpoint not found"
+        );
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException exception) {
+        return buildResponse(
+            HttpStatus.NOT_FOUND,
+            "NOT_FOUND",
+            "API endpoint not found"
         );
     }
 

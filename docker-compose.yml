@@ -17,5 +17,46 @@ services:
       retries: 5
       start_period: 10s
 
+  backend:
+    profiles:
+      - demo
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: vibe-code-manager-backend:local
+    container_name: vibe-code-manager-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/aiqueue
+      SPRING_DATASOURCE_USERNAME: aiqueue
+      SPRING_DATASOURCE_PASSWORD: aiqueue
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_JPA_OPEN_IN_VIEW: "false"
+      AIQ_EXECUTOR_FAKE_ENABLED: "true"
+      AIQ_EXECUTOR_CODEX_ENABLED: "false"
+      AIQ_LIMIT_FAKE_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  frontend:
+    profiles:
+      - demo
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_USE_MOCK_API: "false"
+        VITE_API_BASE_URL: ""
+    image: vibe-code-manager-frontend:local
+    container_name: vibe-code-manager-frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+
 volumes:
   postgres_data:

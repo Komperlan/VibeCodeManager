@@ -1,6 +1,11 @@
 # Build output
 target/
+dist/
 *.class
+*.tsbuildinfo
+
+# Frontend dependencies
+node_modules/
 
 # IDE files
 .idea/

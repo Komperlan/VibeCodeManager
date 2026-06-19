@@ -7,6 +7,27 @@ springdoc:
     tags-sorter: alpha
 
 aiq:
+  web:
+    cors:
+      allowed-origins:
+        - http://localhost:5173
+        - http://127.0.0.1:5173
+        - http://[::1]:5173
+      allowed-origin-patterns:
+        - http://localhost:[*]
+        - http://127.0.0.1:[*]
+      allowed-methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      allowed-headers:
+        - Content-Type
+        - Accept
+        - Authorization
+      max-age-seconds: 3600
   limit:
     fake:
       enabled: true

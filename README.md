@@ -1,6 +1,6 @@
 # Vibe Code Manager
 
-Local-first backend для управления проектами, AI-инструментами, очередями
+Local-first приложение для управления проектами, AI-инструментами, очередями
 промптов и запуском этих очередей через executor adapters.
 
 Подробная техническая информация вынесена в
@@ -16,6 +16,8 @@ Codex CLI и будущим executor adapters лежат в
 - PostgreSQL/Flyway persistence.
 - Fake executor включён по умолчанию.
 - Codex CLI executor реализован, но выключен по умолчанию.
+- Codex limit checker реализован через безопасный probe-запуск.
+- React + TypeScript frontend по Figma Make макету с mock data.
 - Swagger UI доступен после запуска приложения.
 
 ## Требования
@@ -23,8 +25,69 @@ Codex CLI и будущим executor adapters лежат в
 - Java 21
 - Maven 3.9+
 - Docker и Docker Compose
+- Node.js 20+ и npm для frontend
 
 ## Быстрый запуск
+
+### Рекомендуемый режим с реальным Codex
+
+```bash
+docker compose up -d postgres
+```
+
+Backend запускается на хосте, чтобы он видел локальные пути проектов,
+установленный `codex`, auth/config и привычное dev-окружение:
+
+```bash
+mvn -f backend/pom.xml -pl bootstrap -am -DskipTests package
+
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/aiqueue \
+SPRING_DATASOURCE_USERNAME=aiqueue \
+SPRING_DATASOURCE_PASSWORD=aiqueue \
+java -jar backend/bootstrap/target/bootstrap-0.0.1-SNAPSHOT.jar
+```
+
+Frontend можно запускать локально:
+
+```bash
+cd frontend
+npm install
+VITE_USE_MOCK_API=false VITE_API_BASE_URL=http://127.0.0.1:8080 npm run dev
+```
+
+После старта:
+
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8080
+- Swagger UI: http://localhost:8080/swagger-ui.html
+- PostgreSQL: `localhost:5432`, database/user/password: `aiqueue`
+
+### Demo-режим полностью в Docker
+
+Для просмотра UI/API без реального агента можно поднять backend и frontend в
+Docker. В этом режиме включён fake executor, а Codex executor выключен:
+
+```bash
+docker compose --profile demo up --build
+```
+
+Остановить:
+
+```bash
+docker compose down
+```
+
+Удалить также данные PostgreSQL:
+
+```bash
+docker compose down -v
+```
+
+Codex executor внутри контейнера не включается по умолчанию. Для него нужна
+отдельная архитектура: host-side runner или явные mounts для `codex`, auth/config
+и локальных project directories.
+
+### Backend
 
 Запустить PostgreSQL:
 
@@ -32,7 +95,7 @@ Codex CLI и будущим executor adapters лежат в
 docker compose up -d postgres
 ```
 
-Запустить backend:
+Запустить backend на хосте:
 
 ```bash
 mvn -f backend/pom.xml -pl bootstrap -am -DskipTests package
@@ -48,6 +111,33 @@ java -jar backend/bootstrap/target/bootstrap-0.0.1-SNAPSHOT.jar
 - Swagger UI: http://localhost:8080/swagger-ui.html
 - OpenAPI JSON: http://localhost:8080/v3/api-docs
 
+### Frontend
+
+Запустить UI на mock data:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Открыть: http://localhost:5173
+
+Подключить UI к Spring Boot backend:
+
+```bash
+VITE_USE_MOCK_API=false VITE_API_BASE_URL=http://127.0.0.1:8080 npm run dev
+```
+
+В HTTP-режиме основные списки берутся из backend. Settings и кнопка `Check
+Limits` пока остаются локальными frontend-заглушками, потому что отдельных
+backend endpoint-ов для них ещё нет.
+
+Если включён VPN и UI показывает `NetworkError when attempting to fetch resource`,
+используй `127.0.0.1` вместо `localhost` и открывай UI по адресу
+http://127.0.0.1:5173. Некоторые VPN/proxy-клиенты перехватывают `localhost` или
+меняют DNS/IPv6-поведение, а loopback IP обычно обходит эту проблему.
+
 Остановить PostgreSQL:
 
 ```bash
@@ -60,10 +150,12 @@ docker compose down
 
 ```bash
 mvn -f backend/pom.xml test
+cd frontend && npm run build
 ```
 
-Infrastructure и bootstrap tests используют Testcontainers, поэтому для полного
-прогона должен быть доступен Docker.
+Infrastructure и bootstrap tests используют Testcontainers. Если Docker
+недоступен, Docker-зависимые PostgreSQL/context tests будут пропущены; на машине
+с Docker они запускаются как интеграционные проверки.
 
 Проверить только отдельный модуль:
 
@@ -101,6 +193,10 @@ java -jar backend/bootstrap/target/bootstrap-0.0.1-SNAPSHOT.jar
 
 Codex executor запускает `codex exec --json --color never --skip-git-repo-check -`
 и передаёт prompt через stdin.
+
+Перед выполнением prompt runner вызывает limit checker. Если лимит недоступен,
+очередь переводится в `WAITING_LIMIT`, prompt остаётся `QUEUED`, execution не
+создаётся.
 
 ## Как пользоваться API
 

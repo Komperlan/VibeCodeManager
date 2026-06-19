@@ -22,6 +22,7 @@ import com.aiq.domain.queue.QueueStatus;
 import com.aiq.domain.safety.WorkingHours;
 import com.aiq.infrastructure.persistence.entity.ProjectJpaEntity;
 import com.aiq.infrastructure.persistence.repositories.ProjectJpaRepository;
+import com.aiq.infrastructure.testsupport.DockerAvailableCondition;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
@@ -30,6 +31,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -40,16 +42,17 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers
+@ExtendWith(DockerAvailableCondition.class)
 @SpringBootTest(classes = PersistenceAdapterIntegrationTest.PersistenceTestConfiguration.class)
 class PersistenceAdapterIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
