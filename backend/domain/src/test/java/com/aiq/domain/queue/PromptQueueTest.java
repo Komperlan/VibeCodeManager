@@ -36,6 +36,26 @@ class PromptQueueTest {
     }
 
     @Test
+    void shouldReopenCompletedQueueForNewPrompts() {
+        PromptQueue promptQueue = queue();
+        promptQueue.complete();
+
+        promptQueue.reopenForNewPrompts();
+
+        assertThat(promptQueue.getStatus()).isEqualTo(QueueStatus.CREATED);
+        assertThat(promptQueue.canRun()).isTrue();
+    }
+
+    @Test
+    void shouldRejectReopeningQueueThatIsNotCompleted() {
+        PromptQueue promptQueue = queue();
+
+        assertThatIllegalStateException()
+            .isThrownBy(promptQueue::reopenForNewPrompts)
+            .withMessage("Only completed queue can be reopened for new prompts");
+    }
+
+    @Test
     void shouldPauseAndResumeRunningQueue() {
         PromptQueue promptQueue = queue();
 

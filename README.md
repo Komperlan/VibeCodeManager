@@ -377,6 +377,14 @@ curl -X POST http://localhost:8080/api/v1/prompts \
 `workingDirectoryOverride` опционален. Если оставить `null`, prompt будет
 выполнен в `rootDirectory` проекта очереди.
 
+Позицию prompt-а в очереди можно менять после создания. Меньшая `position`
+выполняется раньше; `priority` используется как дополнительный tie-breaker при
+равной позиции.
+
+Если очередь уже была `COMPLETED`, но в неё добавили новые prompt-ы, её можно
+запустить снова. Backend переоткроет очередь перед выполнением новых queued
+prompt-ов.
+
 ### 5. Запустить очередь
 
 ```bash
@@ -411,6 +419,7 @@ POST /api/v1/prompts
 POST /api/v1/prompts/drafts
 GET  /api/v1/prompts
 GET  /api/v1/prompts/{promptId}
+PATCH /api/v1/prompts/{promptId}/position
 
 POST /api/v1/queues/{queueId}/runner/run
 POST /api/v1/queues/{queueId}/runner/run-next

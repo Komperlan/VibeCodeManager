@@ -113,6 +113,32 @@ public class PromptApplicationService {
         promptRepository.save(prompt);
     }
 
+    public void changePromptPosition(UUID promptId, long position) {
+        Prompt prompt = findPromptRequired(promptId);
+        if (position < 0) {
+            throw new IllegalArgumentException("Prompt position must not be negative");
+        }
+
+        List<Prompt> prompts = promptRepository.findByQueueId(prompt.getQueueId());
+        Prompt promptAtRequestedPosition = prompts.stream()
+            .filter(candidate -> !candidate.getId().equals(prompt.getId()))
+            .filter(candidate -> candidate.getPosition() == position)
+            .findFirst()
+            .orElse(null);
+        if (promptAtRequestedPosition != null && !promptAtRequestedPosition.canChangePosition()) {
+            throw new IllegalStateException("Target prompt position belongs to prompt that cannot be reordered");
+        }
+
+        long currentPosition = prompt.getPosition();
+        prompt.changePosition(position);
+        promptRepository.save(prompt);
+
+        if (promptAtRequestedPosition != null) {
+            promptAtRequestedPosition.changePosition(currentPosition);
+            promptRepository.save(promptAtRequestedPosition);
+        }
+    }
+
     public void cancelPrompt(UUID promptId) {
         Prompt prompt = findPromptRequired(promptId);
         prompt.cancel();

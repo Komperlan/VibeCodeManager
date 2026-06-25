@@ -281,6 +281,12 @@ public class Prompt extends AggregateRoot {
         this.updatedAt = Instant.now();
     }
 
+    public void changePosition(long newPosition) {
+        ensureReorderable();
+        this.position = validatePosition(newPosition);
+        this.updatedAt = Instant.now();
+    }
+
     public void changeContent(String newContent) {
         ensureEditable();
         this.content = validateContent(newContent);
@@ -299,6 +305,10 @@ public class Prompt extends AggregateRoot {
 
     public boolean isQueued() {
         return status == PromptStatus.QUEUED;
+    }
+
+    public boolean canChangePosition() {
+        return status == PromptStatus.DRAFT || status == PromptStatus.QUEUED;
     }
 
     public boolean isTerminal() {
@@ -338,6 +348,12 @@ public class Prompt extends AggregateRoot {
     private void ensureEditable() {
         if (isTerminal()) {
             throw new IllegalStateException("Terminal prompt cannot be edited");
+        }
+    }
+
+    private void ensureReorderable() {
+        if (!canChangePosition()) {
+            throw new IllegalStateException("Only draft or queued prompt can be reordered");
         }
     }
 

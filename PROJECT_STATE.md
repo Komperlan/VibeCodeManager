@@ -56,10 +56,12 @@ Domain:
   `CLAUDE_CODE`, `CUSTOM`;
 - `PromptQueue` со статусами `CREATED`, `WAITING_LIMIT`,
   `WAITING_CONFIRMATION`, `RUNNING`, `PAUSED`, `STOPPED`, `COMPLETED`,
-  `DISABLED`;
+  `DISABLED`; completed-очередь можно запустить снова, если после завершения в
+  неё добавили новые queued prompt-ы;
 - `Prompt` со статусами `DRAFT`, `QUEUED`, `WAITING_LIMIT`,
   `WAITING_CONFIRMATION`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`,
-  `SKIPPED`;
+  `SKIPPED`; prompt ordering теперь основан на `position`, а `priority`
+  используется как tie-breaker;
 - `PromptExecution` с результатом запуска;
 - `QueueExecutionPolicy`, `WorkingHours`, `NextPromptSelector`,
   `PromptOrderingService`.
@@ -171,6 +173,8 @@ Frontend находится в `frontend/`.
 Страница Projects показывает Codex context проекта. При создании проекта можно
 оставить `New context on first run` или указать существующий Codex session id;
 известные приложению session id доступны как варианты в поле ввода.
+Страница Queues позволяет менять позицию draft/queued prompt-ов кнопками
+`Up`/`Down`.
 
 Структура:
 

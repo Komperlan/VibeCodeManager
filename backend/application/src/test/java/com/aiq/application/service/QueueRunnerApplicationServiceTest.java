@@ -95,29 +95,73 @@ class QueueRunnerApplicationServiceTest {
     }
 
     @Test
-    void shouldExecuteHighestPriorityPromptFirst() {
+    void shouldRunCompletedQueueWhenNewPromptWasAdded() {
         PromptQueue queue = queue();
-        Prompt lowPriority = prompt(queue, "Low priority", 0, 0);
-        Prompt highPriority = prompt(queue, "High priority", 5, 1);
-        Prompt sameLowPriority = prompt(queue, "Same low priority", 0, 2);
+        queue.complete();
+        Prompt prompt = prompt(queue, "New work after completion", 0, 0);
 
         givenQueue(queue);
-        givenPrompts(queue, lowPriority, highPriority, sameLowPriority);
+        givenPrompts(queue, prompt);
+        givenSuccessfulExecutor();
+
+        RunQueueResult result = service.runQueue(new RunQueueCommand(queue.getId(), 3));
+
+        assertThat(result.executedPrompts()).isEqualTo(1);
+        assertThat(result.stoppedOnError()).isFalse();
+        assertThat(result.reason()).isEqualTo("Queue completed");
+        assertThat(prompt.getStatus()).isEqualTo(PromptStatus.COMPLETED);
+        assertThat(queue.getStatus()).isEqualTo(QueueStatus.COMPLETED);
+
+        verify(promptExecutor).execute(any(PromptExecutionRequest.class));
+        verify(promptRepository).save(prompt);
+    }
+
+    @Test
+    void shouldMoveCompletedQueueToWaitingLimitWhenNewPromptCannotStartBecauseOfLimit() {
+        PromptQueue queue = queue();
+        queue.complete();
+        Prompt prompt = prompt(queue, "Wait after completion", 0, 0);
+
+        givenQueue(queue);
+        givenPrompts(queue, prompt);
+        givenLimitResult(AiLimitCheckResult.limitReached("Codex usage limit reached", null));
+
+        RunNextPromptResult result = service.runNextPrompt(queue.getId());
+
+        assertThat(result.executed()).isFalse();
+        assertThat(result.promptId()).isEqualTo(prompt.getId());
+        assertThat(result.reason()).isEqualTo("Codex usage limit reached");
+        assertThat(prompt.getStatus()).isEqualTo(PromptStatus.QUEUED);
+        assertThat(queue.getStatus()).isEqualTo(QueueStatus.WAITING_LIMIT);
+
+        verify(promptQueueRepository).save(queue);
+        verifyNoInteractions(promptExecutionRepository, promptExecutor);
+    }
+
+    @Test
+    void shouldExecuteEarliestPositionPromptFirst() {
+        PromptQueue queue = queue();
+        Prompt earliest = prompt(queue, "Earliest", 0, 0);
+        Prompt laterHighPriority = prompt(queue, "Later high priority", 5, 1);
+        Prompt latest = prompt(queue, "Latest", 0, 2);
+
+        givenQueue(queue);
+        givenPrompts(queue, earliest, laterHighPriority, latest);
         givenSuccessfulExecutor();
 
         RunNextPromptResult result = service.runNextPrompt(queue.getId());
 
-        assertThat(result.promptId()).isEqualTo(highPriority.getId());
-        assertThat(lowPriority.getStatus()).isEqualTo(PromptStatus.QUEUED);
-        assertThat(highPriority.getStatus()).isEqualTo(PromptStatus.COMPLETED);
-        assertThat(sameLowPriority.getStatus()).isEqualTo(PromptStatus.QUEUED);
+        assertThat(result.promptId()).isEqualTo(earliest.getId());
+        assertThat(earliest.getStatus()).isEqualTo(PromptStatus.COMPLETED);
+        assertThat(laterHighPriority.getStatus()).isEqualTo(PromptStatus.QUEUED);
+        assertThat(latest.getStatus()).isEqualTo(PromptStatus.QUEUED);
         assertThat(queue.getStatus()).isEqualTo(QueueStatus.RUNNING);
 
         PromptExecutionRequest request = executedRequest();
-        assertThat(request.promptId()).isEqualTo(highPriority.getId());
-        assertThat(request.title()).isEqualTo(highPriority.getTitle());
+        assertThat(request.promptId()).isEqualTo(earliest.getId());
+        assertThat(request.title()).isEqualTo(earliest.getTitle());
 
-        verify(promptRepository).save(highPriority);
+        verify(promptRepository).save(earliest);
         verify(promptQueueRepository).save(queue);
     }
 

@@ -117,7 +117,7 @@ public class QueueRunnerApplicationService {
 
         List<Prompt> prompts = promptRepository.findByQueueId(queue.getId());
         return nextPromptSelector.selectNext(prompts)
-            .map(prompt -> executePrompt(queue, prompt))
+            .map(prompt -> executePrompt(reopenCompletedQueueIfNeeded(queue), prompt))
             .orElseGet(() -> completeQueue(queue));
     }
 
@@ -367,7 +367,17 @@ public class QueueRunnerApplicationService {
     }
 
     private boolean canExecute(PromptQueue queue) {
-        return queue.getStatus() == QueueStatus.RUNNING || queue.canRun();
+        return queue.getStatus() == QueueStatus.RUNNING
+            || queue.canRun()
+            || queue.canReopenForNewPrompts();
+    }
+
+    private PromptQueue reopenCompletedQueueIfNeeded(PromptQueue queue) {
+        if (queue.canReopenForNewPrompts()) {
+            queue.reopenForNewPrompts();
+        }
+
+        return queue;
     }
 
     private boolean hasQueuedPrompts(UUID queueId) {

@@ -11,21 +11,21 @@ class PromptOrderingServiceTest {
     private final PromptOrderingService orderingService = new PromptOrderingService();
 
     @Test
-    void shouldOrderPromptsByPriorityPositionAndCreatedAt() {
+    void shouldOrderPromptsByPositionPriorityAndCreatedAt() {
         Prompt lowPriority = prompt(1, 0);
         Prompt highPriorityLater = prompt(2, 1);
-        Prompt highPriorityEarlier = prompt(2, 0);
+        Prompt highPrioritySamePosition = prompt(2, 0);
 
         List<Prompt> orderedPrompts = orderingService.order(List.of(
             lowPriority,
             highPriorityLater,
-            highPriorityEarlier
+            highPrioritySamePosition
         ));
 
         assertThat(orderedPrompts).containsExactly(
-            highPriorityEarlier,
-            highPriorityLater,
-            lowPriority
+            highPrioritySamePosition,
+            lowPriority,
+            highPriorityLater
         );
     }
 

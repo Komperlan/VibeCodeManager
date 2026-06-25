@@ -129,4 +129,16 @@ class PromptControllerTest extends ControllerTestSupport {
 
         verify(promptApplicationService).changePromptContent(promptId, "Updated content");
     }
+
+    @Test
+    void shouldChangePromptPosition() throws Exception {
+        UUID promptId = UUID.randomUUID();
+
+        mockMvc.perform(patch("/api/v1/prompts/{promptId}/position", promptId)
+                .contentType(APPLICATION_JSON)
+                .content(json(Map.of("position", 2))))
+            .andExpect(status().isNoContent());
+
+        verify(promptApplicationService).changePromptPosition(promptId, 2);
+    }
 }

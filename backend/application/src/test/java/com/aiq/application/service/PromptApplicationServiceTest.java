@@ -135,18 +135,49 @@ class PromptApplicationServiceTest {
     @Test
     void shouldListQueuePromptsInDomainOrder() {
         PromptQueue queue = queue();
-        Prompt lowPriority = prompt(queue, "Low priority", 1, 0);
-        Prompt highPriority = prompt(queue, "High priority", 10, 1);
-        Prompt samePriorityEarlier = prompt(queue, "Earlier", 1, 2);
+        Prompt earlier = prompt(queue, "Earlier", 1, 0);
+        Prompt laterHighPriority = prompt(queue, "Later high priority", 10, 1);
+        Prompt samePositionHigherPriority = prompt(queue, "Same position high priority", 5, 0);
         givenQueue(queue);
         when(promptRepository.findByQueueId(queue.getId()))
-            .thenReturn(List.of(lowPriority, highPriority, samePriorityEarlier));
+            .thenReturn(List.of(earlier, laterHighPriority, samePositionHigherPriority));
 
         List<PromptSummary> prompts = service.listQueuePrompts(queue.getId());
 
         assertThat(prompts)
             .extracting(PromptSummary::id)
-            .containsExactly(highPriority.getId(), lowPriority.getId(), samePriorityEarlier.getId());
+            .containsExactly(samePositionHigherPriority.getId(), earlier.getId(), laterHighPriority.getId());
+    }
+
+    @Test
+    void shouldSwapPromptPositions() {
+        PromptQueue queue = queue();
+        Prompt first = prompt(queue, "First", 0, 0);
+        Prompt second = prompt(queue, "Second", 0, 1);
+        givenPrompt(first);
+        when(promptRepository.findByQueueId(queue.getId())).thenReturn(List.of(first, second));
+
+        service.changePromptPosition(first.getId(), 1);
+
+        assertThat(first.getPosition()).isEqualTo(1);
+        assertThat(second.getPosition()).isEqualTo(0);
+        ArgumentCaptor<Prompt> captor = ArgumentCaptor.forClass(Prompt.class);
+        verify(promptRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).containsExactly(first, second);
+    }
+
+    @Test
+    void shouldRejectReorderingCompletedPrompt() {
+        PromptQueue queue = queue();
+        Prompt prompt = prompt(queue, "Done", 0, 0);
+        prompt.start();
+        prompt.complete();
+        givenPrompt(prompt);
+        when(promptRepository.findByQueueId(queue.getId())).thenReturn(List.of(prompt));
+
+        assertThatThrownBy(() -> service.changePromptPosition(prompt.getId(), 1))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("Only draft or queued prompt can be reordered");
     }
 
     @Test

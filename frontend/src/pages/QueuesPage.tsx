@@ -17,6 +17,7 @@ interface QueuesPageProps {
   loading: boolean;
   onCreateQueue: (input: CreateQueueInput) => void;
   onCreatePrompt: (input: CreatePromptInput) => void;
+  onMovePrompt: (promptId: string, position: number) => void;
   onRunQueue: (queueId: string) => void;
 }
 
@@ -364,7 +365,9 @@ export function QueuesPage(props: QueuesPageProps) {
           <div className="grid gap-4">
             {visibleQueues.length === 0 && <EmptyState title="No queues" description="Create a queue for the selected project." />}
             {visibleQueues.map((queue) => {
-              const queuePrompts = props.prompts.filter((prompt) => prompt.queueId === queue.id);
+              const queuePrompts = [...props.prompts]
+                .filter((prompt) => prompt.queueId === queue.id)
+                .sort((first, second) => first.position - second.position || second.priority - first.priority);
               const total = queue.queuedPrompts + queue.completedPrompts + queue.failedPrompts;
               const progress = total === 0 ? 0 : (queue.completedPrompts / total) * 100;
               const selected = props.selectedQueueId === queue.id;
@@ -413,8 +416,16 @@ export function QueuesPage(props: QueuesPageProps) {
                   </div>
 
                   <div className="mt-5 grid gap-3">
-                    {queuePrompts.slice(0, 3).map((prompt) => (
-                      <button
+                    {queuePrompts.slice(0, 5).map((prompt, index, visiblePrompts) => {
+                      const previousMovable = [...visiblePrompts]
+                        .slice(0, index)
+                        .reverse()
+                        .find(canMovePrompt);
+                      const nextMovable = visiblePrompts.slice(index + 1).find(canMovePrompt);
+                      const movable = canMovePrompt(prompt);
+
+                      return (
+                      <div
                         className={cn(
                           'flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition hover:bg-white/[0.08]',
                           props.selectedPromptDetails?.id === prompt.id ? 'bg-violet-400/[0.16]' : 'bg-black/20',
@@ -424,15 +435,56 @@ export function QueuesPage(props: QueuesPageProps) {
                           event.stopPropagation();
                           props.onSelectPrompt(prompt.id);
                         }}
-                        type="button"
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            props.onSelectPrompt(prompt.id);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
                       >
                         <div>
                           <div className="font-bold text-slate-200">{prompt.title}</div>
                           <div className="mt-1 text-xs text-slate-500">#{prompt.position} / priority {prompt.priority}</div>
                         </div>
-                        <StatusBadge status={prompt.status} />
-                      </button>
-                    ))}
+                        <div className="flex items-center gap-2">
+                          {movable && (
+                            <div className="flex gap-1">
+                              <button
+                                className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-1 text-xs font-bold text-slate-300 transition hover:border-violet-300/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                                disabled={!previousMovable || props.loading}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  if (previousMovable) {
+                                    props.onMovePrompt(prompt.id, previousMovable.position);
+                                  }
+                                }}
+                                type="button"
+                              >
+                                Up
+                              </button>
+                              <button
+                                className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-1 text-xs font-bold text-slate-300 transition hover:border-violet-300/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                                disabled={!nextMovable || props.loading}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  if (nextMovable) {
+                                    props.onMovePrompt(prompt.id, nextMovable.position);
+                                  }
+                                }}
+                                type="button"
+                              >
+                                Down
+                              </button>
+                            </div>
+                          )}
+                          <StatusBadge status={prompt.status} />
+                        </div>
+                      </div>
+                      );
+                    })}
                   </div>
                 </article>
               );
@@ -493,4 +545,8 @@ function executionText(prompt: PromptDetails) {
     ?? execution.stderr
     ?? execution.rawOutput
     ?? 'Execution finished without text output.';
+}
+
+function canMovePrompt(prompt: Prompt) {
+  return prompt.status === 'DRAFT' || prompt.status === 'QUEUED';
 }

@@ -12,13 +12,13 @@ class NextPromptSelectorTest {
     private final NextPromptSelector selector = new NextPromptSelector();
 
     @Test
-    void shouldSelectHighestPriorityQueuedPrompt() {
+    void shouldSelectFirstQueuedPromptByPosition() {
         Prompt completed = prompt(PromptStatus.COMPLETED, 10, 0);
-        Prompt queuedLow = prompt(PromptStatus.QUEUED, 1, 0);
-        Prompt queuedHigh = prompt(PromptStatus.QUEUED, 2, 0);
+        Prompt queuedEarlier = prompt(PromptStatus.QUEUED, 1, 1);
+        Prompt queuedLater = prompt(PromptStatus.QUEUED, 10, 2);
 
-        assertThat(selector.selectNext(List.of(completed, queuedLow, queuedHigh)))
-            .containsSame(queuedHigh);
+        assertThat(selector.selectNext(List.of(completed, queuedEarlier, queuedLater)))
+            .containsSame(queuedEarlier);
     }
 
     @Test

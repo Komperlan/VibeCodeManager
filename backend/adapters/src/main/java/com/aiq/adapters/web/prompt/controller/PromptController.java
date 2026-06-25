@@ -3,6 +3,7 @@ package com.aiq.adapters.web.prompt.controller;
 import com.aiq.adapters.web.prompt.request.AddPromptRequest;
 import com.aiq.adapters.web.prompt.request.ChangePromptContentRequest;
 import com.aiq.adapters.web.prompt.request.ChangePromptPriorityRequest;
+import com.aiq.adapters.web.prompt.request.ChangePromptPositionRequest;
 import com.aiq.adapters.web.prompt.request.ChangePromptTitleRequest;
 import com.aiq.adapters.web.common.ErrorResponse;
 import com.aiq.application.prompt.AddPromptCommand;
@@ -175,6 +176,26 @@ public class PromptController {
         @Valid @RequestBody ChangePromptPriorityRequest request
     ) {
         promptApplicationService.changePromptPriority(promptId, request.priority());
+    }
+
+    @PatchMapping("/{promptId}/position")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Change prompt position", description = "Moves a draft or queued prompt inside its queue.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "Prompt position changed", content = @Content),
+        @ApiResponse(responseCode = "400", description = "Invalid request",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Prompt not found",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Prompt state does not allow reordering",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public void changePromptPosition(
+        @Parameter(description = "Prompt id", example = "8f3fdc67-2b5d-40d9-a939-a7d4fc015e6e")
+        @PathVariable UUID promptId,
+        @Valid @RequestBody ChangePromptPositionRequest request
+    ) {
+        promptApplicationService.changePromptPosition(promptId, request.position());
     }
 
     @PostMapping("/{promptId}/cancel")

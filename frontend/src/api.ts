@@ -31,6 +31,7 @@ export interface ApiClient {
   listPrompts(): Promise<Prompt[]>;
   getPrompt(promptId: string): Promise<PromptDetails>;
   createPrompt(input: CreatePromptInput): Promise<string>;
+  updatePromptPosition(promptId: string, position: number): Promise<void>;
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<AppSettings>;
   runQueue(queueId: string): Promise<RunQueueResult>;
@@ -199,18 +200,97 @@ const mockApi: ApiClient = {
 
     return delay(promptId);
   },
+  updatePromptPosition: (promptId, position) => {
+    const prompt = promptsState.find((item) => item.id === promptId);
+    if (!prompt) {
+      return Promise.reject(new Error(`Prompt not found: ${promptId}`));
+    }
+    if (!canMovePrompt(prompt)) {
+      return Promise.reject(new Error('Only draft or queued prompt can be reordered'));
+    }
+
+    const targetPrompt = promptsState.find(
+      (item) => item.queueId === prompt.queueId && item.id !== prompt.id && item.position === position,
+    );
+    if (targetPrompt && !canMovePrompt(targetPrompt)) {
+      return Promise.reject(new Error('Target prompt cannot be reordered'));
+    }
+
+    const currentPosition = prompt.position;
+    promptsState = promptsState.map((item) => {
+      if (item.id === prompt.id) {
+        return { ...item, position };
+      }
+      if (targetPrompt && item.id === targetPrompt.id) {
+        return { ...item, position: currentPosition };
+      }
+
+      return item;
+    });
+    return delay(undefined);
+  },
   getSettings: () => delay({ ...settingsState }),
   updateSettings: (settings) => {
     settingsState = { ...settings };
     return delay({ ...settingsState });
   },
-  runQueue: (queueId) =>
-    delay({
+  runQueue: (queueId) => {
+    const queue = queuesState.find((item) => item.id === queueId);
+    if (!queue) {
+      return Promise.reject(new Error(`Queue not found: ${queueId}`));
+    }
+    if (queue.status === 'DISABLED' || queue.status === 'PAUSED') {
+      return delay({
+        queueId,
+        executedPrompts: 0,
+        stoppedOnError: false,
+        reason: `Queue cannot run from ${queue.status}`,
+      });
+    }
+
+    const runnablePrompts = promptsState
+      .filter((prompt) => prompt.queueId === queueId && prompt.status === 'QUEUED')
+      .sort((first, second) => first.position - second.position || second.priority - first.priority)
+      .slice(0, Math.max(1, queue.maxPromptsPerRun));
+
+    if (runnablePrompts.length === 0) {
+      queuesState = queuesState.map((item) => item.id === queueId ? { ...item, status: 'COMPLETED', nextPrompt: null } : item);
+      return delay({
+        queueId,
+        executedPrompts: 0,
+        stoppedOnError: false,
+        reason: 'No queued prompts',
+      });
+    }
+
+    const completedPromptIds = new Set(runnablePrompts.map((prompt) => prompt.id));
+    promptsState = promptsState.map((prompt) => completedPromptIds.has(prompt.id) ? { ...prompt, status: 'COMPLETED' } : prompt);
+
+    const remainingQueuedPrompts = promptsState
+      .filter((prompt) => prompt.queueId === queueId && prompt.status === 'QUEUED')
+      .sort((first, second) => first.position - second.position || second.priority - first.priority);
+    queuesState = queuesState.map((item) => {
+      if (item.id !== queueId) {
+        return item;
+      }
+
+      return {
+        ...item,
+        status: remainingQueuedPrompts.length === 0 ? 'COMPLETED' : 'STOPPED',
+        queuedPrompts: remainingQueuedPrompts.length,
+        completedPrompts: item.completedPrompts + runnablePrompts.length,
+        nextPrompt: remainingQueuedPrompts[0]?.title ?? null,
+        updatedAt: 'Just now',
+      };
+    });
+
+    return delay({
       queueId,
-      executedPrompts: queueId === 'queue-docs' ? 0 : 2,
+      executedPrompts: runnablePrompts.length,
       stoppedOnError: false,
-      reason: queueId === 'queue-docs' ? 'Queue is waiting for Codex limit reset' : 'Mock run completed',
-    }),
+      reason: remainingQueuedPrompts.length === 0 ? 'Queue completed' : 'Run limit reached',
+    });
+  },
   checkLimits: () => {
     toolsState = toolsState.map((tool) => ({
       ...tool,
@@ -246,6 +326,10 @@ function nextPromptPosition(queueId: string) {
     .map((prompt) => prompt.position);
 
   return positions.length === 0 ? 1 : Math.max(...positions) + 1;
+}
+
+function canMovePrompt(prompt: Prompt) {
+  return prompt.status === 'DRAFT' || prompt.status === 'QUEUED';
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -531,6 +615,11 @@ const httpApi: ApiClient = {
       method: 'POST',
       body: JSON.stringify(input),
     }).then((response) => response.promptId),
+  updatePromptPosition: (promptId, position) =>
+    request<void>(`/api/v1/prompts/${encodeURIComponent(promptId)}/position`, {
+      method: 'PATCH',
+      body: JSON.stringify({ position }),
+    }),
   getSettings: async () => ({
     ...settingsState,
     backendBaseUrl: API_BASE_URL || 'http://127.0.0.1:8080',

@@ -204,6 +204,17 @@ export function App() {
     });
   }
 
+  function handleMovePrompt(promptId: string, position: number) {
+    void runAction(async () => {
+      await api.updatePromptPosition(promptId, position);
+      await refreshWorkspace();
+      if (selectedPromptDetails?.id === promptId) {
+        setSelectedPromptDetails(await api.getPrompt(promptId));
+      }
+      setNotice('Prompt position updated');
+    });
+  }
+
   function handleCheckLimits() {
     void runAction(async () => {
       const nextTools = await api.checkLimits();
@@ -287,6 +298,7 @@ export function App() {
             loading={loading}
             onCreateQueue={handleCreateQueue}
             onCreatePrompt={handleCreatePrompt}
+            onMovePrompt={handleMovePrompt}
             onRunQueue={handleRunQueue}
           />
         )}

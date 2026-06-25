@@ -13,7 +13,16 @@ export type QueueStatus =
   | 'STOPPED'
   | 'COMPLETED'
   | 'DISABLED';
-export type PromptStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'SKIPPED';
+export type PromptStatus =
+  | 'DRAFT'
+  | 'QUEUED'
+  | 'WAITING_LIMIT'
+  | 'WAITING_CONFIRMATION'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'SKIPPED';
 export type AutoRunMode = 'NOTIFY_ONLY' | 'ASK_CONFIRMATION' | 'AUTO_RUN';
 
 export interface Project {

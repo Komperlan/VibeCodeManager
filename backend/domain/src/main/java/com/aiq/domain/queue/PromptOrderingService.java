@@ -7,9 +7,8 @@ import java.util.List;
 public class PromptOrderingService {
 
     private static final Comparator<Prompt> ORDERING = Comparator
-        .comparingInt(Prompt::getPriority)
-        .reversed()
-        .thenComparingLong(Prompt::getPosition)
+        .comparingLong(Prompt::getPosition)
+        .thenComparing(Comparator.comparingInt(Prompt::getPriority).reversed())
         .thenComparing(Prompt::getCreatedAt);
 
     public List<Prompt> order(Collection<Prompt> prompts) {

@@ -133,6 +133,11 @@ public class PromptQueue extends AggregateRoot {
         changeStatus(QueueStatus.COMPLETED);
     }
 
+    public void reopenForNewPrompts() {
+        ensureStatus(QueueStatus.COMPLETED, "Only completed queue can be reopened for new prompts");
+        changeStatus(QueueStatus.CREATED);
+    }
+
     public void disable() {
         changeStatus(QueueStatus.DISABLED);
     }
@@ -152,6 +157,10 @@ public class PromptQueue extends AggregateRoot {
             && status != QueueStatus.PAUSED
             && status != QueueStatus.DISABLED
             && status != QueueStatus.COMPLETED;
+    }
+
+    public boolean canReopenForNewPrompts() {
+        return status == QueueStatus.COMPLETED;
     }
 
     public boolean shouldStopOnError() {
