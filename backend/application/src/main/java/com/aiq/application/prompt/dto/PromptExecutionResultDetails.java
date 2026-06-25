@@ -14,6 +14,7 @@ public record PromptExecutionResultDetails(
     Optional<String> stderr,
     Optional<String> rawOutput,
     Optional<String> errorMessage,
+    Optional<String> externalSessionId,
     Optional<Instant> startedAt,
     Optional<Instant> finishedAt,
     Optional<Long> durationMillis

@@ -48,6 +48,17 @@ public class CodexCliProperties {
             "-"
         ));
 
+    @NotEmpty(message = "codex resumeArguments must not be empty")
+    private List<@NotBlank(message = "codex resume argument must not be blank") String> resumeArguments =
+        new ArrayList<>(List.of(
+            "--sandbox",
+            "workspace-write",
+            "exec",
+            "resume",
+            "--json",
+            "--skip-git-repo-check"
+        ));
+
     @NotNull(message = "codex environment must not be null")
     private Map<
         @NotBlank(message = "codex environment variable name must not be blank") String,

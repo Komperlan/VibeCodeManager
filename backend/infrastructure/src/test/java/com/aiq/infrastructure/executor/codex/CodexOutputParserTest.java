@@ -54,6 +54,28 @@ class CodexOutputParserTest {
     }
 
     @Test
+    void shouldExtractThreadIdFromCodexJsonLines() {
+        String stdout = """
+            {"type":"thread.started","thread_id":"019edddb-7d00-7df2-8577-d74b168adfad"}
+            {"type":"item.completed","item":{"type":"agent_message","text":"Done"}}
+            """;
+        ProcessRunResult processResult = new ProcessRunResult(
+            0,
+            stdout,
+            "",
+            stdout,
+            Duration.ofMillis(100),
+            false,
+            null
+        );
+
+        ExecutionResult result = parser.parse(processResult);
+
+        assertThat(result.externalSessionId()).isEqualTo("019edddb-7d00-7df2-8577-d74b168adfad");
+        assertThat(result.stdout()).isEqualTo("Done");
+    }
+
+    @Test
     void shouldExtractTextFromNestedCodexJsonLineContent() {
         String stdout = """
             {"type":"agent_message","message":{"content":[{"type":"output_text","text":"Nested output"}]}}

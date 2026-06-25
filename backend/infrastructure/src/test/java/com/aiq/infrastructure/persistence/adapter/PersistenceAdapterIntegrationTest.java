@@ -105,7 +105,11 @@ class PersistenceAdapterIntegrationTest {
 
     @Test
     void projectRepositoryShouldSaveAndLoadProjects() {
-        Project savedProject = projectRepository.save(Project.create("Backend", "/tmp/backend"));
+        Project savedProject = projectRepository.save(Project.create(
+            "Backend",
+            "/tmp/backend",
+            "019edddb-7d00-7df2-8577-d74b168adfad"
+        ));
 
         assertThat(projectRepository.existsByRootDirectory("/tmp/backend")).isTrue();
         assertThat(projectRepository.existsByRootDirectory("/tmp/missing")).isFalse();
@@ -113,6 +117,7 @@ class PersistenceAdapterIntegrationTest {
             .hasValueSatisfying(project -> {
                 assertThat(project.getName()).isEqualTo("Backend");
                 assertThat(project.getRootDirectory()).isEqualTo("/tmp/backend");
+                assertThat(project.getCodexSessionId()).isEqualTo("019edddb-7d00-7df2-8577-d74b168adfad");
                 assertThat(project.isActive()).isTrue();
             });
         assertThat(projectRepository.findAll())
@@ -277,7 +282,10 @@ class PersistenceAdapterIntegrationTest {
         assertThat(promptExecutionRepository.findById(firstExecution.getId()))
             .hasValueSatisfying(execution -> {
                 assertThat(execution.getStatus()).isEqualTo(ExecutionStatus.COMPLETED);
-                assertThat(execution.result()).hasValueSatisfying(result -> assertThat(result.stdout()).isEqualTo("done"));
+                assertThat(execution.result()).hasValueSatisfying(result -> {
+                    assertThat(result.stdout()).isEqualTo("done");
+                    assertThat(result.externalSessionId()).isEqualTo("019edddb-7d00-7df2-8577-d74b168adfad");
+                });
                 assertThat(execution.duration()).contains(Duration.ofMillis(100));
             });
     }
@@ -289,7 +297,14 @@ class PersistenceAdapterIntegrationTest {
             aiToolId,
             ExecutionStatus.COMPLETED,
             command,
-            new ExecutionResult(0, "done", "", "done", null),
+            new ExecutionResult(
+                0,
+                "done",
+                "",
+                "done",
+                null,
+                "019edddb-7d00-7df2-8577-d74b168adfad"
+            ),
             startedAt,
             finishedAt,
             Duration.between(startedAt, finishedAt)

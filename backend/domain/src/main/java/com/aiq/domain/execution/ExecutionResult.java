@@ -5,13 +5,25 @@ public record ExecutionResult(
     String stdout,
     String stderr,
     String rawOutput,
-    String errorMessage
+    String errorMessage,
+    String externalSessionId
 ) {
+
+    public ExecutionResult(
+        int exitCode,
+        String stdout,
+        String stderr,
+        String rawOutput,
+        String errorMessage
+    ) {
+        this(exitCode, stdout, stderr, rawOutput, errorMessage, null);
+    }
 
     public ExecutionResult {
         stdout = stdout == null ? "" : stdout;
         stderr = stderr == null ? "" : stderr;
         rawOutput = rawOutput == null ? "" : rawOutput;
+        externalSessionId = normalizeExternalSessionId(externalSessionId);
     }
 
     public boolean isSuccessful() {
@@ -20,5 +32,14 @@ public record ExecutionResult(
 
     public boolean isFailed() {
         return !isSuccessful();
+    }
+
+    private static String normalizeExternalSessionId(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String normalizedValue = value.trim();
+        return normalizedValue.isEmpty() ? null : normalizedValue;
     }
 }

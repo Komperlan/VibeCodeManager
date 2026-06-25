@@ -30,7 +30,7 @@ public class ProjectApplicationService {
             throw new IllegalArgumentException("Project with this root directory already exists");
         }
 
-        Project project = Project.create(command.name(), command.rootDirectory());
+        Project project = Project.create(command.name(), command.rootDirectory(), command.codexSessionId());
         Project savedProject = projectRepository.save(project);
         return ProjectMapper.toCreateProjectResult(savedProject);
     }
@@ -56,6 +56,16 @@ public class ProjectApplicationService {
     public void changeRootDirectory(UUID projectId, String rootDirectory) {
         Project project = findProjectRequired(projectId);
         project.changeRootDirectory(rootDirectory);
+        projectRepository.save(project);
+    }
+
+    public void changeCodexSession(UUID projectId, String codexSessionId) {
+        Project project = findProjectRequired(projectId);
+        if (codexSessionId == null) {
+            project.clearCodexSession();
+        } else {
+            project.attachCodexSession(codexSessionId);
+        }
         projectRepository.save(project);
     }
 

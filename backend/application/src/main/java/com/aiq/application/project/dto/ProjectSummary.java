@@ -6,6 +6,7 @@ import java.util.UUID;
 public record ProjectSummary(
     UUID id,
     String name,
+    String codexSessionId,
     ProjectStatus status
 ) {
 }

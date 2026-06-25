@@ -140,6 +140,80 @@ class QueueRunnerApplicationServiceTest {
     }
 
     @Test
+    void shouldPassExistingProjectCodexSessionToExecutor() {
+        PromptQueue queue = queue();
+        Prompt prompt = prompt(queue, "Continue project context", 0, 0);
+        Project project = Project.create(
+            "Backend",
+            PROJECT_ROOT_DIRECTORY,
+            "019edddb-7d00-7df2-8577-d74b168adfad"
+        );
+
+        givenQueue(queue);
+        givenPrompts(queue, prompt);
+        givenProject(queue, project);
+        givenSuccessfulExecutor();
+
+        service.runNextPrompt(queue.getId());
+
+        PromptExecutionRequest request = executedRequest();
+        assertThat(request.codexSessionId()).isEqualTo("019edddb-7d00-7df2-8577-d74b168adfad");
+        verify(projectRepository, never()).save(any(Project.class));
+    }
+
+    @Test
+    void shouldSaveNewCodexSessionReturnedByExecutor() {
+        PromptQueue queue = queue();
+        Prompt prompt = prompt(queue, "Create project context", 0, 0);
+        Project project = Project.create("Backend", PROJECT_ROOT_DIRECTORY);
+
+        givenQueue(queue);
+        givenPrompts(queue, prompt);
+        givenProject(queue, project);
+        givenExecutorResult(new ExecutionResult(
+            0,
+            "Execution finished",
+            "",
+            "Execution finished",
+            null,
+            "019edddb-7d00-7df2-8577-d74b168adfad"
+        ));
+
+        service.runNextPrompt(queue.getId());
+
+        assertThat(project.getCodexSessionId()).isEqualTo("019edddb-7d00-7df2-8577-d74b168adfad");
+        verify(projectRepository).save(project);
+    }
+
+    @Test
+    void shouldNotOverwriteExistingProjectCodexSession() {
+        PromptQueue queue = queue();
+        Prompt prompt = prompt(queue, "Keep chosen context", 0, 0);
+        Project project = Project.create(
+            "Backend",
+            PROJECT_ROOT_DIRECTORY,
+            "existing-session"
+        );
+
+        givenQueue(queue);
+        givenPrompts(queue, prompt);
+        givenProject(queue, project);
+        givenExecutorResult(new ExecutionResult(
+            0,
+            "Execution finished",
+            "",
+            "Execution finished",
+            null,
+            "new-session"
+        ));
+
+        service.runNextPrompt(queue.getId());
+
+        assertThat(project.getCodexSessionId()).isEqualTo("existing-session");
+        verify(projectRepository, never()).save(any(Project.class));
+    }
+
+    @Test
     void shouldExpandHomeDirectoryInProjectRootDirectory() {
         PromptQueue queue = queue();
         Prompt prompt = prompt(queue, "Use home shortcut", 0, 0);
@@ -705,8 +779,12 @@ class QueueRunnerApplicationServiceTest {
     }
 
     private void givenProject(PromptQueue queue, String rootDirectory) {
+        givenProject(queue, Project.create("Backend", rootDirectory));
+    }
+
+    private void givenProject(PromptQueue queue, Project project) {
         when(projectRepository.findById(queue.getProjectId()))
-            .thenReturn(Optional.of(Project.create("Backend", rootDirectory)));
+            .thenReturn(Optional.of(project));
     }
 
     private void givenAiToolEnabled(UUID toolId) {

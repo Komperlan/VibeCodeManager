@@ -8,6 +8,7 @@ public record ProjectDetails(
     UUID id,
     String name,
     String rootDirectory,
+    String codexSessionId,
     ProjectStatus status,
     Instant createdAt,
     Instant updatedAt

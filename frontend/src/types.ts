@@ -20,6 +20,7 @@ export interface Project {
   id: string;
   name: string;
   rootDirectory: string;
+  codexSessionId: string | null;
   status: ProjectStatus;
   queueCount: number;
   promptCount: number;
@@ -55,6 +56,7 @@ export interface PromptExecutionResult {
   stderr: string | null;
   rawOutput: string | null;
   errorMessage: string | null;
+  externalSessionId: string | null;
   startedAt: string | null;
   finishedAt: string | null;
   durationMillis: number | null;
@@ -118,6 +120,7 @@ export interface RunQueueResult {
 export interface CreateProjectInput {
   name: string;
   rootDirectory: string;
+  codexSessionId?: string | null;
 }
 
 export interface CreateAiToolInput {

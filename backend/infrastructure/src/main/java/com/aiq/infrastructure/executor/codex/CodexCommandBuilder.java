@@ -21,7 +21,7 @@ public class CodexCommandBuilder {
         Objects.requireNonNull(request, "Prompt execution request must not be null");
 
         return new ProcessCommand(
-            arguments(),
+            arguments(request),
             workingDirectory(request),
             stdin(request),
             new HashMap<>(properties.getEnvironment()),
@@ -34,10 +34,16 @@ public class CodexCommandBuilder {
         return String.join(" ", build(request).arguments());
     }
 
-    private List<String> arguments() {
+    private List<String> arguments(PromptExecutionRequest request) {
         List<String> arguments = new ArrayList<>();
         arguments.add(LocalPathNormalizer.executablePath(properties.getExecutablePath()));
-        arguments.addAll(properties.getDefaultArguments());
+        if (request != null && request.hasCodexSessionId()) {
+            arguments.addAll(properties.getResumeArguments());
+            arguments.add(request.codexSessionId());
+            arguments.add("-");
+        } else {
+            arguments.addAll(properties.getDefaultArguments());
+        }
 
         return arguments;
     }

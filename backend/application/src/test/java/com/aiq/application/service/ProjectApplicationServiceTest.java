@@ -41,7 +41,23 @@ class ProjectApplicationServiceTest {
         assertThat(savedProject.getId()).isEqualTo(result.projectId());
         assertThat(savedProject.getName()).isEqualTo("Backend");
         assertThat(savedProject.getRootDirectory()).isEqualTo("/workspace/backend");
+        assertThat(savedProject.getCodexSessionId()).isNull();
         assertThat(savedProject.getStatus()).isEqualTo(ProjectStatus.ACTIVE);
+    }
+
+    @Test
+    void shouldCreateProjectWithExistingCodexSession() {
+        CreateProjectCommand command = new CreateProjectCommand(
+            "Backend",
+            "/workspace/backend",
+            "019edddb-7d00-7df2-8577-d74b168adfad"
+        );
+        when(projectRepository.existsByRootDirectory(command.rootDirectory())).thenReturn(false);
+        when(projectRepository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.createProject(command);
+
+        assertThat(savedProject().getCodexSessionId()).isEqualTo("019edddb-7d00-7df2-8577-d74b168adfad");
     }
 
     @Test
@@ -95,6 +111,20 @@ class ProjectApplicationServiceTest {
 
         assertThat(project.getName()).isEqualTo("New name");
         verify(projectRepository).save(project);
+    }
+
+    @Test
+    void shouldChangeAndClearCodexSession() {
+        Project project = project();
+        givenProject(project);
+
+        service.changeCodexSession(project.getId(), "019edddb-7d00-7df2-8577-d74b168adfad");
+        assertThat(project.getCodexSessionId()).isEqualTo("019edddb-7d00-7df2-8577-d74b168adfad");
+
+        service.changeCodexSession(project.getId(), null);
+        assertThat(project.getCodexSessionId()).isNull();
+
+        verify(projectRepository, org.mockito.Mockito.times(2)).save(project);
     }
 
     @Test

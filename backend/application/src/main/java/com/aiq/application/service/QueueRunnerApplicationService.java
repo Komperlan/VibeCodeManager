@@ -24,6 +24,7 @@ import com.aiq.application.runner.RunQueueCommand;
 import com.aiq.application.runner.dto.RunNextPromptResult;
 import com.aiq.application.runner.dto.RunQueueResult;
 import com.aiq.domain.aitool.AiTool;
+import com.aiq.domain.aitool.AiToolType;
 import com.aiq.domain.execution.ExecutionResult;
 import com.aiq.domain.execution.PromptExecution;
 import com.aiq.domain.project.Project;
@@ -122,7 +123,8 @@ public class QueueRunnerApplicationService {
 
     private RunNextPromptResult executePrompt(PromptQueue queue, Prompt prompt) {
         AiTool aiTool = findEnabledAiToolRequired(prompt.getTargetAiToolId());
-        String workingDirectory = resolveWorkingDirectory(queue, prompt);
+        Project project = findProjectRequired(queue.getProjectId());
+        String workingDirectory = resolveWorkingDirectory(project, prompt);
         log.info(
             "Preparing prompt {} from queue {} with AI tool {} in working directory {}",
             prompt.getId(),
@@ -144,7 +146,8 @@ public class QueueRunnerApplicationService {
             prompt.getTargetAiToolId(),
             prompt.getTitle(),
             prompt.getContent(),
-            workingDirectory
+            workingDirectory,
+            codexSessionIdFor(aiTool, project)
         );
         PromptExecution execution = PromptExecution.create(
             prompt.getId(),
@@ -157,6 +160,7 @@ public class QueueRunnerApplicationService {
 
         ExecutionResult executionResult = execute(request);
         execution.complete(executionResult);
+        saveCodexSessionIfNew(project, aiTool, executionResult);
 
         Optional<AiLimitCheckResult> executionLimit = executionResult.isFailed()
             ? detectExecutionLimit(limitCheckRequest, executionResult)
@@ -187,10 +191,30 @@ public class QueueRunnerApplicationService {
         );
     }
 
-    private String resolveWorkingDirectory(PromptQueue queue, Prompt prompt) {
+    private String resolveWorkingDirectory(Project project, Prompt prompt) {
         String workingDirectory = prompt.workingDirectoryOverride()
-            .orElseGet(() -> findProjectRequired(queue.getProjectId()).getRootDirectory());
+            .orElseGet(project::getRootDirectory);
         return LocalPathNormalizer.normalizeDirectory(workingDirectory);
+    }
+
+    private String codexSessionIdFor(AiTool aiTool, Project project) {
+        if (aiTool.getType() != AiToolType.CODEX) {
+            return null;
+        }
+
+        return project.getCodexSessionId();
+    }
+
+    private void saveCodexSessionIfNew(Project project, AiTool aiTool, ExecutionResult executionResult) {
+        if (aiTool.getType() != AiToolType.CODEX || project.hasCodexSession()) {
+            return;
+        }
+        if (executionResult.externalSessionId() == null) {
+            return;
+        }
+
+        project.attachCodexSession(executionResult.externalSessionId());
+        projectRepository.save(project);
     }
 
     private AiLimitCheckRequest limitCheckRequest(AiTool aiTool, String workingDirectory) {

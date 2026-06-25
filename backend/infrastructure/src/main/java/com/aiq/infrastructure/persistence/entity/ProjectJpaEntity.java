@@ -33,6 +33,9 @@ public class ProjectJpaEntity {
     @Column(name = "root_directory", nullable = false, columnDefinition = "text")
     private String rootDirectory;
 
+    @Column(name = "codex_session_id", length = 200)
+    private String codexSessionId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
     private ProjectStatus status;

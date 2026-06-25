@@ -16,6 +16,8 @@ Codex CLI и будущим executor adapters лежат в
 - PostgreSQL/Flyway persistence.
 - Fake executor включён по умолчанию.
 - Codex CLI executor реализован, но выключен по умолчанию.
+- Project хранит один Codex context/session и продолжает его через
+  `codex exec resume`.
 - Codex limit checker реализован через безопасный probe-запуск.
 - Очереди автоматически возобновляются после восстановления лимита Codex.
 - React + TypeScript frontend по Figma Make макету с mock data.
@@ -220,6 +222,14 @@ Codex executor запускает
 `codex exec --json --color never --sandbox workspace-write --skip-git-repo-check -`
 и передаёт prompt через stdin.
 
+Каждый project может быть привязан к одному Codex context/session. Если
+`codexSessionId` у проекта пустой, первый успешный Codex-запуск создаёт session,
+backend извлекает `thread_id` из JSONL-вывода и сохраняет его в проект. Если
+session уже указана, следующие prompt-ы проекта запускаются через
+`codex exec resume <SESSION_ID> -`, то есть продолжают тот же Codex-контекст.
+Существующую session можно указать при создании проекта или поменять позже через
+UI/endpoint `PATCH /api/v1/projects/{projectId}/codex-session`.
+
 Флаг `--sandbox workspace-write` обязателен для сценариев, где Codex должен
 создавать или менять файлы. Без него Codex может ответить, что workspace
 read-only, и prompt завершится текстовым сообщением без изменений в проекте.
@@ -237,16 +247,13 @@ Backend пишет в лог строку `Preparing prompt ... in working direc
 можно проверить, куда реально отправлен Codex.
 
 Текст, который вернул Codex, сохраняется в `prompt_executions.result_stdout`.
-Сырые stdout/stderr/raw output тоже сохраняются в `prompt_executions`. В API
-последний результат доступен через `GET /api/v1/prompts/{promptId}` в поле
-`lastExecution.responseText`; во frontend его можно открыть кликом по prompt-у
-на странице Queues.
+Сырые stdout/stderr/raw output и `externalSessionId` тоже сохраняются в
+`prompt_executions`. В API последний результат доступен через
+`GET /api/v1/prompts/{promptId}` в поле `lastExecution.responseText`; во frontend
+его можно открыть кликом по prompt-у на странице Queues.
 
-Контекст очереди не является общей Codex-сессией. Каждый prompt запускается
-отдельным `codex exec`. Поэтому prompt-ы "стакуются" только через состояние
-файлов в рабочей директории: если первый prompt изменил файл, второй увидит уже
-изменённый проект. История предыдущих prompt-ов пока не добавляется автоматически
-в следующий prompt.
+Важно: `Project = один Codex-контекст`, но это не бесконечная память. Codex всё
+равно ограничен своим context window и может компактировать старую историю.
 
 AI tool в UI с `type = CODEX` и `executablePath = codex` выбирает целевой tool
 для prompt-а, но сам по себе не переключает backend executor. Переключение
@@ -301,9 +308,14 @@ curl -X POST http://localhost:8080/api/v1/projects \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "Vibe Code Manager",
-    "rootDirectory": "/home/user/projects/vibe-code-manager"
+    "rootDirectory": "/home/user/projects/vibe-code-manager",
+    "codexSessionId": null
   }'
 ```
+
+Если хочешь продолжить уже существующую Codex session, вместо `null` укажи её
+id. Если оставить `null`, backend сохранит новую session после первого запуска
+Codex prompt-а.
 
 ### 2. Зарегистрировать AI tool
 
@@ -385,6 +397,7 @@ curl -X POST http://localhost:8080/api/v1/queues/<QUEUE_ID>/runner/run-next
 POST /api/v1/projects
 GET  /api/v1/projects
 GET  /api/v1/projects/{projectId}
+PATCH /api/v1/projects/{projectId}/codex-session
 
 POST /api/v1/ai-tools
 GET  /api/v1/ai-tools

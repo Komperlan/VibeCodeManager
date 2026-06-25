@@ -1,6 +1,7 @@
 package com.aiq.adapters.web.project.controller;
 
 import com.aiq.adapters.web.project.request.ChangeProjectRootDirectoryRequest;
+import com.aiq.adapters.web.project.request.ChangeProjectCodexSessionRequest;
 import com.aiq.adapters.web.project.request.CreateProjectRequest;
 import com.aiq.adapters.web.project.request.RenameProjectRequest;
 import com.aiq.adapters.web.common.ErrorResponse;
@@ -48,7 +49,7 @@ public class ProjectController {
     })
     public CreateProjectResult createProject(@Valid @RequestBody CreateProjectRequest request) {
         return projectApplicationService.createProject(
-            new CreateProjectCommand(request.name(), request.rootDirectory())
+            new CreateProjectCommand(request.name(), request.rootDirectory(), request.codexSessionId())
         );
     }
 
@@ -113,6 +114,26 @@ public class ProjectController {
         @Valid @RequestBody ChangeProjectRootDirectoryRequest request
     ) {
         projectApplicationService.changeRootDirectory(projectId, request.rootDirectory());
+    }
+
+    @PatchMapping("/{projectId}/codex-session")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Change project Codex context", description = "Attaches an existing Codex session to a project or clears it.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "Codex session changed", content = @Content),
+        @ApiResponse(responseCode = "400", description = "Invalid request",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Project not found",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Project state does not allow changing Codex session",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public void changeCodexSession(
+        @Parameter(description = "Project id", example = "c4c2b1b6-f7e8-4465-891f-9641d31f7c52")
+        @PathVariable UUID projectId,
+        @Valid @RequestBody ChangeProjectCodexSessionRequest request
+    ) {
+        projectApplicationService.changeCodexSession(projectId, request.codexSessionId());
     }
 
     @PostMapping("/{projectId}/disable")

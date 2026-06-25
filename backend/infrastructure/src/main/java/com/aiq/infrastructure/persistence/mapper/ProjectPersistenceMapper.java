@@ -13,6 +13,7 @@ public final class ProjectPersistenceMapper {
             project.getId(),
             project.getName(),
             project.getRootDirectory(),
+            project.getCodexSessionId(),
             project.getStatus(),
             project.getCreatedAt(),
             project.getUpdatedAt()
@@ -24,6 +25,7 @@ public final class ProjectPersistenceMapper {
             entity.getId(),
             entity.getName(),
             entity.getRootDirectory(),
+            entity.getCodexSessionId(),
             entity.getStatus(),
             entity.getCreatedAt(),
             entity.getUpdatedAt()

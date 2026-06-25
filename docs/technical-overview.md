@@ -206,6 +206,7 @@ REST и Picocli interfaces будут добавлены отдельными м
 - `UUID id`;
 - имя;
 - корневая директория;
+- optional `codexSessionId` для привязки проекта к одному Codex context/session;
 - статус `ACTIVE`, `DISABLED` или `ARCHIVED`.
 
 Disabled project не участвует в автоматическом запуске. Archived project нельзя

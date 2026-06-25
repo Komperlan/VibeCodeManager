@@ -24,6 +24,7 @@ public final class PromptExecutionPersistenceMapper {
             result == null ? null : result.stderr(),
             result == null ? null : result.rawOutput(),
             result == null ? null : result.errorMessage(),
+            result == null ? null : result.externalSessionId(),
             execution.startedAt().orElse(null),
             execution.finishedAt().orElse(null),
             execution.duration().map(Duration::toMillis).orElse(null)
@@ -38,7 +39,8 @@ public final class PromptExecutionPersistenceMapper {
                 entity.getResultStdout(),
                 entity.getResultStderr(),
                 entity.getResultRawOutput(),
-                entity.getResultErrorMessage()
+                entity.getResultErrorMessage(),
+                entity.getExternalSessionId()
             );
 
         Duration duration = entity.getDurationMillis() == null

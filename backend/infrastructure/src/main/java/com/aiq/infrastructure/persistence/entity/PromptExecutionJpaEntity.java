@@ -55,6 +55,9 @@ public class PromptExecutionJpaEntity {
     @Column(name = "result_error_message", columnDefinition = "text")
     private String resultErrorMessage;
 
+    @Column(name = "external_session_id", length = 200)
+    private String externalSessionId;
+
     @Column(name = "started_at")
     private Instant startedAt;
 

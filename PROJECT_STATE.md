@@ -1,6 +1,6 @@
 # Vibe Code Manager / текущее состояние проекта
 
-Снимок состояния на 2026-06-19.
+Снимок состояния на 2026-06-25.
 
 Этот файл фиксирует актуальную техническую картину проекта: что уже реализовано,
 как устроены модули, какие проверки проходят и что логично делать дальше.
@@ -50,7 +50,8 @@ domain <- application <- infrastructure/adapters <- bootstrap
 
 Domain:
 
-- `Project` со статусами `ACTIVE`, `DISABLED`, `ARCHIVED`;
+- `Project` со статусами `ACTIVE`, `DISABLED`, `ARCHIVED` и optional
+  `codexSessionId`: один project соответствует одному Codex context/session;
 - `AiTool` со статусами `ENABLED`, `DISABLED` и типами `FAKE`, `CODEX`,
   `CLAUDE_CODE`, `CUSTOM`;
 - `PromptQueue` со статусами `CREATED`, `WAITING_LIMIT`,
@@ -80,7 +81,8 @@ Application:
 
 Infrastructure:
 
-- Flyway migration `V1__initial_schema.sql`;
+- Flyway migrations `V1__initial_schema.sql`,
+  `V2__codex_project_context.sql`;
 - JPA entities для projects, AI tools, prompt queues, prompts, executions;
 - Spring Data repositories;
 - persistence adapters для application repository ports;
@@ -88,9 +90,11 @@ Infrastructure:
 - `ProcessRunner` на `ProcessBuilder` без shell wrapping;
 - `CodexCliPromptExecutor` запускает Codex с `--sandbox workspace-write`,
   чтобы prompt-ы могли создавать и менять файлы в рабочей директории;
-- `CodexCommandBuilder`;
-- `CodexOutputParser`;
-- сохранение stdout/stderr/raw output Codex в `prompt_executions`;
+- `CodexCommandBuilder`: первый запуск идёт через `codex exec`, а проекты с
+  сохранённой session продолжаются через `codex exec resume <SESSION_ID> -`;
+- `CodexOutputParser` извлекает response text и `thread_id` из JSONL;
+- сохранение stdout/stderr/raw output Codex и `externalSessionId` в
+  `prompt_executions`;
 - `FakeAiLimitChecker`;
 - `CodexCliLimitChecker`;
 - `CodexLimitCheckCommandBuilder`;
@@ -110,6 +114,9 @@ Adapters:
 - `GlobalExceptionHandler`;
 - `ErrorResponse`;
 - Swagger/OpenAPI config.
+
+Для projects доступен endpoint `PATCH /api/v1/projects/{projectId}/codex-session`,
+который привязывает существующую Codex session или очищает привязку.
 
 Bootstrap:
 
@@ -136,6 +143,9 @@ Docker/runtime:
   перед запуском executor-а.
 - пути вида `~/project` разворачиваются приложением в домашнюю директорию,
   потому что Codex запускается через `ProcessBuilder` без shell.
+- для Codex project хранит `codexSessionId`: если он пустой, первый запуск
+  создаёт новую session и сохраняет `thread_id`; если заполнен, следующие
+  prompt-ы проекта продолжают эту session через `codex exec resume`.
 
 ## 4. Frontend: реализовано
 
@@ -157,6 +167,10 @@ Frontend находится в `frontend/`.
 - AI Tools;
 - Queues;
 - Settings.
+
+Страница Projects показывает Codex context проекта. При создании проекта можно
+оставить `New context on first run` или указать существующий Codex session id;
+известные приложению session id доступны как варианты в поле ввода.
 
 Структура:
 
@@ -260,9 +274,8 @@ npm run build
 - Полностью контейнерный режим предназначен для demo/fake executor. Для реального
   Codex backend лучше запускать на хосте, иначе контейнер не увидит локальные
   пути проектов, установленный Codex CLI и пользовательскую авторизацию.
-- Очередь пока не хранит общий Codex conversation context. Каждый prompt
-  запускается отдельным `codex exec`; последовательность работает через изменения
-  файлов в рабочей директории, а не через автоматическую передачу истории prompt-ов.
+- Codex context привязан к project, а не к отдельной queue. Если в одном project
+  несколько очередей, они продолжают одну и ту же Codex session.
 
 ## 8. Что делать дальше
 

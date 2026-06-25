@@ -44,7 +44,8 @@ class ProjectControllerTest extends ControllerTestSupport {
                 .contentType(APPLICATION_JSON)
                 .content(json(Map.of(
                     "name", "Backend",
-                    "rootDirectory", "/workspace/backend"
+                    "rootDirectory", "/workspace/backend",
+                    "codexSessionId", "019edddb-7d00-7df2-8577-d74b168adfad"
                 ))))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.projectId").value(projectId.toString()));
@@ -54,6 +55,7 @@ class ProjectControllerTest extends ControllerTestSupport {
         CreateProjectCommand command = captor.getValue();
         org.assertj.core.api.Assertions.assertThat(command.name()).isEqualTo("Backend");
         org.assertj.core.api.Assertions.assertThat(command.rootDirectory()).isEqualTo("/workspace/backend");
+        org.assertj.core.api.Assertions.assertThat(command.codexSessionId()).isEqualTo("019edddb-7d00-7df2-8577-d74b168adfad");
     }
 
     @Test
@@ -93,6 +95,31 @@ class ProjectControllerTest extends ControllerTestSupport {
             .andExpect(status().isNoContent());
 
         verify(projectApplicationService).renameProject(projectId, "New name");
+    }
+
+    @Test
+    void shouldChangeProjectCodexSession() throws Exception {
+        UUID projectId = UUID.randomUUID();
+
+        mockMvc.perform(patch("/api/v1/projects/{projectId}/codex-session", projectId)
+                .contentType(APPLICATION_JSON)
+                .content(json(Map.of("codexSessionId", "019edddb-7d00-7df2-8577-d74b168adfad"))))
+            .andExpect(status().isNoContent());
+
+        verify(projectApplicationService)
+            .changeCodexSession(projectId, "019edddb-7d00-7df2-8577-d74b168adfad");
+    }
+
+    @Test
+    void shouldClearProjectCodexSession() throws Exception {
+        UUID projectId = UUID.randomUUID();
+
+        mockMvc.perform(patch("/api/v1/projects/{projectId}/codex-session", projectId)
+                .contentType(APPLICATION_JSON)
+                .content("{\"codexSessionId\":null}"))
+            .andExpect(status().isNoContent());
+
+        verify(projectApplicationService).changeCodexSession(projectId, null);
     }
 
     @Test

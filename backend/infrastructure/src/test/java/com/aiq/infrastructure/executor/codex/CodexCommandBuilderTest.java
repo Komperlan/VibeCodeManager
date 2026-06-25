@@ -53,6 +53,33 @@ class CodexCommandBuilderTest {
     }
 
     @Test
+    void shouldBuildResumeCommandWhenRequestHasCodexSession() {
+        CodexCommandBuilder builder = new CodexCommandBuilder(properties());
+        PromptExecutionRequest request = request(
+            "/tmp/project",
+            "019edddb-7d00-7df2-8577-d74b168adfad"
+        );
+
+        ProcessCommand command = builder.build(request);
+
+        assertThat(command.arguments()).containsExactly(
+            "/usr/local/bin/codex",
+            "--sandbox",
+            "workspace-write",
+            "exec",
+            "resume",
+            "--json",
+            "--skip-git-repo-check",
+            "019edddb-7d00-7df2-8577-d74b168adfad",
+            "-"
+        );
+        assertThat(builder.buildSafeCommand(request))
+            .contains("exec resume")
+            .contains("019edddb-7d00-7df2-8577-d74b168adfad")
+            .doesNotContain("Run tests and fix failures");
+    }
+
+    @Test
     void shouldUseCurrentDirectoryWhenRequestHasNoWorkingDirectoryOverride() {
         CodexCommandBuilder builder = new CodexCommandBuilder(properties());
 
@@ -104,12 +131,17 @@ class CodexCommandBuilderTest {
     }
 
     private PromptExecutionRequest request(String workingDirectoryOverride) {
+        return request(workingDirectoryOverride, null);
+    }
+
+    private PromptExecutionRequest request(String workingDirectoryOverride, String codexSessionId) {
         return new PromptExecutionRequest(
             UUID.randomUUID(),
             UUID.randomUUID(),
             "Fix Maven tests",
             "Run tests and fix failures",
-            workingDirectoryOverride
+            workingDirectoryOverride,
+            codexSessionId
         );
     }
 }

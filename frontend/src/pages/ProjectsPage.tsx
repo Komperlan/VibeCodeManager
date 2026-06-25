@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { Button, EmptyState, Field, inputClassName, PageHeader, Panel, PanelHeader, StatusBadge } from '../components/ui';
 import type { CreateProjectInput, Project } from '../types';
 
@@ -7,6 +7,7 @@ interface ProjectsPageProps {
   selectedProjectId: string | null;
   loading: boolean;
   onCreateProject: (input: CreateProjectInput) => void;
+  onChangeCodexSession: (projectId: string, codexSessionId: string | null) => void;
   onSelectProject: (projectId: string) => void;
 }
 
@@ -15,16 +16,24 @@ export function ProjectsPage(props: ProjectsPageProps) {
   const [form, setForm] = useState<CreateProjectInput>({
     name: '',
     rootDirectory: '',
+    codexSessionId: null,
   });
   const selectedProject = props.projects.find((project) => project.id === props.selectedProjectId) ?? props.projects[0];
+  const [codexSessionDraft, setCodexSessionDraft] = useState('');
+  const knownCodexSessions = [...new Set(props.projects.map((project) => project.codexSessionId).filter(Boolean))] as string[];
+
+  useEffect(() => {
+    setCodexSessionDraft(selectedProject?.codexSessionId ?? '');
+  }, [selectedProject?.id, selectedProject?.codexSessionId]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     props.onCreateProject({
       name: form.name.trim(),
       rootDirectory: form.rootDirectory.trim(),
+      codexSessionId: form.codexSessionId?.trim() || null,
     });
-    setForm({ name: '', rootDirectory: '' });
+    setForm({ name: '', rootDirectory: '', codexSessionId: null });
     setShowCreateForm(false);
   }
 
@@ -44,7 +53,7 @@ export function ProjectsPage(props: ProjectsPageProps) {
       {showCreateForm && (
         <Panel className="mb-5">
           <PanelHeader eyebrow="Create" title="New project" description="Use an absolute local root directory for the repository you want to automate." />
-          <form className="grid gap-4 lg:grid-cols-[1fr_1.4fr_auto]" onSubmit={handleSubmit}>
+          <form className="grid gap-4 lg:grid-cols-[1fr_1.3fr_1.1fr_auto]" onSubmit={handleSubmit}>
             <Field label="Name">
               <input
                 className={inputClassName}
@@ -64,6 +73,16 @@ export function ProjectsPage(props: ProjectsPageProps) {
                 value={form.rootDirectory}
               />
             </Field>
+            <Field label="Codex context">
+              <input
+                className={inputClassName}
+                list="known-codex-sessions"
+                maxLength={200}
+                onChange={(event) => setForm((current) => ({ ...current, codexSessionId: event.target.value }))}
+                placeholder="New context on first run"
+                value={form.codexSessionId ?? ''}
+              />
+            </Field>
             <div className="flex items-end">
               <Button disabled={props.loading} type="submit" variant="primary">
                 Create
@@ -71,6 +90,14 @@ export function ProjectsPage(props: ProjectsPageProps) {
             </div>
           </form>
         </Panel>
+      )}
+
+      {knownCodexSessions.length > 0 && (
+        <datalist id="known-codex-sessions">
+          {knownCodexSessions.map((sessionId) => (
+            <option key={sessionId} value={sessionId} />
+          ))}
+        </datalist>
       )}
 
       <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
@@ -109,6 +136,36 @@ export function ProjectsPage(props: ProjectsPageProps) {
               <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
                 <div className="eyebrow">Root Directory</div>
                 <div className="mt-2 break-all font-mono text-sm text-slate-200">{selectedProject.rootDirectory}</div>
+              </div>
+              <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
+                <div className="eyebrow">Codex Context</div>
+                <div className="mt-2 break-all font-mono text-sm text-slate-200">
+                  {selectedProject.codexSessionId ?? 'New context will be created on first Codex run'}
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto]">
+                  <input
+                    className={inputClassName}
+                    list="known-codex-sessions"
+                    maxLength={200}
+                    onChange={(event) => setCodexSessionDraft(event.target.value)}
+                    placeholder="Paste existing Codex session id"
+                    value={codexSessionDraft}
+                  />
+                  <Button
+                    disabled={props.loading}
+                    onClick={() => props.onChangeCodexSession(selectedProject.id, codexSessionDraft.trim() || null)}
+                    variant="ghost"
+                  >
+                    Save Context
+                  </Button>
+                  <Button
+                    disabled={props.loading || !selectedProject.codexSessionId}
+                    onClick={() => props.onChangeCodexSession(selectedProject.id, null)}
+                    variant="danger"
+                  >
+                    Clear
+                  </Button>
+                </div>
               </div>
               <div className="grid gap-4 md:grid-cols-3">
                 <InfoCard label="Status" value={selectedProject.status} />

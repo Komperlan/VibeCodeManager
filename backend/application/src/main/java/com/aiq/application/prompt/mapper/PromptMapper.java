@@ -66,6 +66,7 @@ public final class PromptMapper {
             result.map(ExecutionResult::stderr).filter(value -> !value.isBlank()),
             result.map(ExecutionResult::rawOutput).filter(value -> !value.isBlank()),
             result.map(ExecutionResult::errorMessage).filter(value -> value != null && !value.isBlank()),
+            result.map(ExecutionResult::externalSessionId).filter(value -> value != null && !value.isBlank()),
             execution.startedAt(),
             execution.finishedAt(),
             execution.duration().map(java.time.Duration::toMillis)

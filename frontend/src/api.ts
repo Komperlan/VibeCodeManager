@@ -23,6 +23,7 @@ export interface ApiClient {
   getDashboardSummary(): Promise<DashboardSummary>;
   listProjects(): Promise<Project[]>;
   createProject(input: CreateProjectInput): Promise<string>;
+  updateProjectCodexSession(projectId: string, codexSessionId: string | null): Promise<void>;
   listAiTools(): Promise<AiTool[]>;
   createAiTool(input: CreateAiToolInput): Promise<string>;
   listQueues(): Promise<Queue[]>;
@@ -67,6 +68,7 @@ const mockApi: ApiClient = {
         id: projectId,
         name: input.name,
         rootDirectory: input.rootDirectory,
+        codexSessionId: input.codexSessionId?.trim() || null,
         status: 'ACTIVE',
         queueCount: 0,
         promptCount: 0,
@@ -74,6 +76,20 @@ const mockApi: ApiClient = {
       },
     ];
     return delay(projectId);
+  },
+  updateProjectCodexSession: (projectId, codexSessionId) => {
+    projectsState = projectsState.map((project) => {
+      if (project.id !== projectId) {
+        return project;
+      }
+
+      return {
+        ...project,
+        codexSessionId: codexSessionId?.trim() || null,
+        lastActivity: 'Just now',
+      };
+    });
+    return delay(undefined);
   },
   listAiTools: () => delay([...toolsState]),
   createAiTool: (input) => {
@@ -144,6 +160,7 @@ const mockApi: ApiClient = {
             stderr: null,
             rawOutput: `Mock response for "${prompt.title}"`,
             errorMessage: null,
+            externalSessionId: '019edddb-7d00-7df2-8577-d74b168adfad',
             startedAt: new Date().toISOString(),
             finishedAt: new Date().toISOString(),
             durationMillis: 100,
@@ -236,6 +253,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 interface ProjectSummaryResponse {
   id: string;
   name: string;
+  codexSessionId: string | null;
   status: ProjectStatus;
 }
 
@@ -243,6 +261,7 @@ interface ProjectDetailsResponse {
   id: string;
   name: string;
   rootDirectory: string;
+  codexSessionId: string | null;
   status: ProjectStatus;
   createdAt: string;
   updatedAt: string;
@@ -353,6 +372,7 @@ async function listHttpProjects(): Promise<Project[]> {
     name: project.name,
     status: project.status,
     rootDirectory: project.rootDirectory,
+    codexSessionId: project.codexSessionId,
     queueCount: 0,
     promptCount: 0,
     lastActivity: formatBackendInstant(project.updatedAt),
@@ -476,6 +496,11 @@ const httpApi: ApiClient = {
       method: 'POST',
       body: JSON.stringify(input),
     }).then((response) => response.projectId),
+  updateProjectCodexSession: (projectId, codexSessionId) =>
+    request<void>(`/api/v1/projects/${encodeURIComponent(projectId)}/codex-session`, {
+      method: 'PATCH',
+      body: JSON.stringify({ codexSessionId }),
+    }),
   listAiTools: listHttpAiTools,
   createAiTool: (input) =>
     request<CreateAiToolResponse>('/api/v1/ai-tools', {

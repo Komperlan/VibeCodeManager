@@ -20,6 +20,7 @@ public class CodexOutputParser {
         "output_text",
         "message",
         "content",
+        "item",
         "text",
         "output",
         "delta"
@@ -35,7 +36,8 @@ public class CodexOutputParser {
             stdout(result),
             result.stderr(),
             result.rawOutput(),
-            errorMessage(result)
+            errorMessage(result),
+            externalSessionId(result).orElse(null)
         );
     }
 
@@ -71,6 +73,55 @@ public class CodexOutputParser {
         }
 
         return Optional.of(String.join(System.lineSeparator(), textChunks));
+    }
+
+    private Optional<String> externalSessionId(ProcessRunResult result) {
+        Optional<String> stdoutSessionId = extractExternalSessionId(result.stdout());
+        if (stdoutSessionId.isPresent()) {
+            return stdoutSessionId;
+        }
+
+        return extractExternalSessionId(result.rawOutput());
+    }
+
+    private Optional<String> extractExternalSessionId(String output) {
+        if (output.isBlank()) {
+            return Optional.empty();
+        }
+
+        for (String line : output.lines().toList()) {
+            String normalizedLine = line.trim();
+            if (normalizedLine.isEmpty() || !normalizedLine.startsWith("{")) {
+                continue;
+            }
+
+            try {
+                JsonNode node = objectMapper.readTree(normalizedLine);
+                Optional<String> sessionId = extractExternalSessionId(node);
+                if (sessionId.isPresent()) {
+                    return sessionId;
+                }
+            } catch (JsonProcessingException ignored) {
+                // Keep parser tolerant: unknown or partial JSONL must not hide the final response.
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    private Optional<String> extractExternalSessionId(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return Optional.empty();
+        }
+
+        String type = node.path("type").asText("");
+        if (!"thread.started".equals(type) && !"session.started".equals(type)) {
+            return Optional.empty();
+        }
+
+        return nonBlank(node.path("thread_id").asText(null))
+            .or(() -> nonBlank(node.path("session_id").asText(null)))
+            .or(() -> nonBlank(node.path("id").asText(null)));
     }
 
     private Optional<String> extractText(JsonNode node) {

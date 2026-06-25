@@ -52,6 +52,41 @@ class ProjectTest {
     }
 
     @Test
+    void shouldAttachAndClearCodexSession() {
+        Project project = project();
+
+        project.attachCodexSession("  019edddb-7d00-7df2-8577-d74b168adfad  ");
+
+        assertThat(project.getCodexSessionId()).isEqualTo("019edddb-7d00-7df2-8577-d74b168adfad");
+        assertThat(project.hasCodexSession()).isTrue();
+
+        project.clearCodexSession();
+
+        assertThat(project.getCodexSessionId()).isNull();
+        assertThat(project.hasCodexSession()).isFalse();
+    }
+
+    @Test
+    void shouldCreateProjectWithExistingCodexSession() {
+        Project project = Project.create(
+            "Vibe Code Manager",
+            "/work/vibe-code-manager",
+            "  019edddb-7d00-7df2-8577-d74b168adfad  "
+        );
+
+        assertThat(project.getCodexSessionId()).isEqualTo("019edddb-7d00-7df2-8577-d74b168adfad");
+    }
+
+    @Test
+    void shouldRejectBlankCodexSession() {
+        Project project = project();
+
+        assertThatIllegalArgumentException()
+            .isThrownBy(() -> project.attachCodexSession(" \t "))
+            .withMessage("Project Codex session id must not be blank");
+    }
+
+    @Test
     void shouldDisableActivateAndArchiveProject() {
         Project project = project();
 

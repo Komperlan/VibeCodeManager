@@ -19,6 +19,7 @@ public final class ProjectMapper {
             project.getId(),
             project.getName(),
             project.getRootDirectory(),
+            project.getCodexSessionId(),
             project.getStatus(),
             project.getCreatedAt(),
             project.getUpdatedAt()
@@ -29,6 +30,7 @@ public final class ProjectMapper {
         return new ProjectSummary(
             project.getId(),
             project.getName(),
+            project.getCodexSessionId(),
             project.getStatus()
         );
     }

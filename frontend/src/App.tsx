@@ -164,6 +164,15 @@ export function App() {
     });
   }
 
+  function handleChangeProjectCodexSession(projectId: string, codexSessionId: string | null) {
+    void runAction(async () => {
+      await api.updateProjectCodexSession(projectId, codexSessionId);
+      await refreshWorkspace();
+      setSelectedProjectId(projectId);
+      setNotice(codexSessionId ? 'Project Codex context attached' : 'Project Codex context cleared');
+    });
+  }
+
   function handleCreateAiTool(input: CreateAiToolInput) {
     void runAction(async () => {
       await api.createAiTool(input);
@@ -249,6 +258,7 @@ export function App() {
             selectedProjectId={selectedProjectId}
             loading={loading}
             onCreateProject={handleCreateProject}
+            onChangeCodexSession={handleChangeProjectCodexSession}
             onSelectProject={handleSelectProject}
           />
         )}
